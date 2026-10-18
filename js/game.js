@@ -107,6 +107,11 @@
       "#b6a3e6", // 西アジア
     ], { key: "asia", name: "アジア", finalName: "アジア大陸", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90 }),
   };
+  // アジア大陸の中の「日本」は、完成させた日本列島として金色で描く
+  {
+    const jp = Object.values(STAGES.asia.pieces).find((p) => p.key === "JPN");
+    if (jp) { jp.color = "#f2c94c"; jp.stroke = "#b0861a"; jp.home = true; STAGES.asia.homeId = jp.id; }
+  }
   let ST = STAGES.japan;
 
   function scaleFor(area, st = ST, exp = EXP) {
@@ -305,11 +310,29 @@
     pending = [];
     [ui.start, ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
     ui.stageTag.textContent = stageLabel();
+    if (ST.key === "asia" && ST.homeId) {
+      // 日本はもう完成しているので、最初から箱の中に置いておく（ここから世界を広げていく）
+      const jid = ST.homeId;
+      queue = queue.filter((q) => q !== jid);
+      const bb = groupBoundsAt([jid]);
+      const x = BOX_R - bb.maxX - 14, y = FLOOR - bb.maxY - 2;
+      const g = createGroupBody([jid], x, y);
+      Body.setPosition(g.body, { x: x + g.local.x, y: y + g.local.y });
+      keepInside(g.body);
+      // 日本列島の大きさから、アジアの大きさまで縮んでいく演出
+      const J = STAGES.japan;
+      g.shrinkFrom = Math.min(6, Math.max(1, J.sTotal / g.geom.s));
+      g.shrinkDur = opts.keep ? 1600 : 900;
+      g.glowUntil = now + 2400;
+      g.glowColor = "#f7d35c";
+      Composite.add(world, g.body);
+      groups.push(g);
+    }
     nextPiece();
     updateHud();
     running = true;
     if (opts.keep || ST.key !== "japan") {
-      fx.push({ type: "banner", t0: now, dur: 2000, text: opts.keep ? "つぎは アジア大陸！" : "エクストラステージ", sub: "となりの国どうしをつなげよう", color: "#3b6fd8" });
+      fx.push({ type: "banner", t0: now + (opts.keep ? 900 : 0), dur: 2200, text: opts.keep ? "世界が広がった！" : "エクストラステージ", sub: "日本からアジア大陸をつなげよう", color: "#3b6fd8" });
     }
   }
   const stageLabel = () => (ST.key === "asia" ? "アジア" : lap > 1 ? `日本 ${lap}周目` : "日本");
@@ -710,7 +733,7 @@
 
   function groupTransform(g) {
     const b = g.body;
-    const t = Math.min(1, (now - g.born) / 380);
+    const t = Math.min(1, (now - g.born) / (g.shrinkDur || 380));
     const from = g.shrinkFrom || 1;
     // くっついた直前の大きさ → 新しい（少し小さい）大きさへ、ぷにっと縮む
     const k = (from + (1 - from) * ease(t)) * (1 + 0.1 * Math.sin(Math.min(1, t * 1.4) * Math.PI));
