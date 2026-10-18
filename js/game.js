@@ -156,6 +156,8 @@
   let hooks = null;          // multiplayer callbacks (null = solo)
   let lineDownUntil = 0;
   let shake = 0;
+  let gameId = 0;           // 古いタイマー（前のゲームの結果表示など）を無効にするため
+  const later = (fn, ms) => { const id = gameId; setTimeout(() => { if (id === gameId) fn(); }, ms); };
   const curLine = () => LINE_Y + (now < lineDownUntil ? LINE_DROP : 0);
 
   function seeded(str) {
@@ -238,6 +240,7 @@
   // opts: { seed, hooks, stage, lap, keep (スコアを引きつぐ) }
   function newGame(m, opts = {}) {
     if (m) mode = m;
+    gameId++;
     const M = MODES[mode];
     ST = STAGES[opts.stage || "japan"];
     lap = opts.lap || 1;
@@ -333,7 +336,7 @@
     current = null;
     vibrate(8);
     updateHud();
-    setTimeout(() => { if (running && !ended && !current) { nextPiece(); updateHud(); } }, DROP_COOLDOWN);
+    later(() => { if (running && !ended && !current) { nextPiece(); updateHud(); } }, DROP_COOLDOWN);
   }
 
   // ---------- merging ----------
@@ -460,12 +463,13 @@
     fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
     fx.push({ type: "rays", t0: now, dur: 3200, group: g });
     fx.push({ type: "banner", t0: now + 250, dur: 2700, text: `${ST.finalName} 完成！`, sub: `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`, color: "#e8a019", big: true });
-    for (let i = 0; i < 5; i++) setTimeout(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
+    for (let i = 0; i < 5; i++) later(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
+    if (ST.key === "japan" && !hooks) { store.set("prefpack.asiaUnlocked", true); showAsiaUnlock(); }
     shake = 14;
     vibrate([40, 60, 40, 60, 120]);
     updateHud();
-    if (hooks) { setTimeout(() => endGame(true), 2800); return; }
-    setTimeout(showStageClear, 3200);
+    if (hooks) { later(() => endGame(true), 2800); return; }
+    later(showStageClear, 3200);
   }
 
   // ---------- stage clear: つぎは どっちに いく？ ----------
@@ -535,7 +539,7 @@
       ui.resultRegions.appendChild(s);
     });
     if (window.PrefRank) window.PrefRank.onResult(lastResult);
-    setTimeout(() => ui.result.classList.remove("hidden"), clearedNow ? 0 : 600);
+    later(() => ui.result.classList.remove("hidden"), clearedNow ? 0 : 600);
   }
 
   // ---------- update ----------
@@ -967,7 +971,18 @@
   ui.shuffleBtn.addEventListener("click", doShuffle);
   $("startBtn").addEventListener("click", () => newGame("normal"));
   $("startEasyBtn").addEventListener("click", () => newGame("easy"));
+  // エクストラステージ: 日本列島を一度完成させると、タイトルから直接あそべる
+  function showAsiaUnlock() {
+    const on = !!store.get("prefpack.asiaUnlocked", false);
+    $("asiaBox").classList.toggle("locked", !on);
+    $("asiaNormalBtn").disabled = !on;
+    $("asiaEasyBtn").disabled = !on;
+  }
+  showAsiaUnlock();
+  $("asiaNormalBtn").addEventListener("click", () => newGame("normal", { stage: "asia" }));
+  $("asiaEasyBtn").addEventListener("click", () => newGame("easy", { stage: "asia" }));
   const toTitle = () => {
+    gameId++;
     running = false; ended = true; engine = null; groups = []; current = null; hooks = null;
     ST = STAGES.japan; fx = []; particles = [];
     [ui.menu, ui.result, ui.clear].forEach((el) => el.classList.add("hidden"));
