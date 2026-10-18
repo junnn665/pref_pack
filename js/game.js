@@ -105,14 +105,14 @@
       "#f5ae62", // 南アジア
       "#7fb7e8", // 中央アジア
       "#b6a3e6", // 西アジア
-    ], { key: "asia", name: "アジア", finalName: "アジア大陸", homeName: "日本", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90 }),
+    ], { key: "asia", name: "アジア", finalName: "アジア大陸", homeName: "日本", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90, cap: true }),
     europe: buildStage(window.WORLD_DATA.europe, [
       "#f2c94c", // (これまでのステージ)
       "#7fb7e8", // 北ヨーロッパ
       "#f29abf", // 西ヨーロッパ
       "#f5ae62", // 南ヨーロッパ
       "#a3d06a", // 東ヨーロッパ
-    ], { key: "europe", name: "ヨーロッパ", finalName: "ユーラシア大陸", homeName: "アジア", regionName: (r) => r, skipRegions: [0], clearBonus: 8000, par: 300, expAdd: 0.03, finalTime: 90 }),
+    ], { key: "europe", name: "ヨーロッパ", finalName: "ユーラシア大陸", homeName: "アジア", regionName: (r) => r, skipRegions: [0], clearBonus: 8000, par: 300, expAdd: 0.03, finalTime: 90, cap: true }),
     africa: buildStage(window.WORLD_DATA.africa, [
       "#f2c94c",
       "#f5ae62", // 北アフリカ
@@ -120,7 +120,7 @@
       "#86cfb0", // 中部アフリカ
       "#a3d06a", // 東アフリカ
       "#b6a3e6", // 南部アフリカ
-    ], { key: "africa", name: "アフリカ", finalName: "アフリカ大陸", homeName: "ユーラシア", regionName: (r) => r, skipRegions: [0], clearBonus: 10000, par: 330, expAdd: 0.03, finalTime: 100 }),
+    ], { key: "africa", name: "アフリカ", finalName: "アフリカ大陸", homeName: "ユーラシア", regionName: (r) => r, skipRegions: [0], clearBonus: 10000, par: 330, expAdd: 0.03, finalTime: 100, cap: true }),
     world: buildStage(window.WORLD_DATA.world, [
       "#f2c94c",
       "#7fb7e8", // 北アメリカ
@@ -128,7 +128,7 @@
       "#86cfb0", // カリブ海
       "#a3d06a", // 南アメリカ
       "#f5ae62", // オセアニア
-    ], { key: "world", name: "世界", finalName: "世界", homeName: "ユーラシア・アフリカ", regionName: (r) => r, skipRegions: [0], clearBonus: 15000, par: 330, expAdd: 0.03, finalTime: 100 }),
+    ], { key: "world", name: "世界", finalName: "世界", homeName: "ユーラシア・アフリカ", regionName: (r) => r, skipRegions: [0], clearBonus: 15000, par: 330, expAdd: 0.03, finalTime: 100, cap: true }),
   };
   const ORDER = ["japan", "asia", "europe", "africa", "world"];
   // 前のステージで完成させた部分（アジアでは日本、ほかは HOME）は金色で描き、最初から箱に入れる
@@ -218,14 +218,24 @@
   function showBest() { ui.bestNormal.textContent = best.normal; ui.bestEasy.textContent = best.easy; }
 
   // ---------- groups ----------
+  // 1つのかたまりの大きさの上限（アジア以降。ロシアやユーラシアが大きすぎて詰まないように）
+  const CAP_W = 0.6 * (BOX_R - BOX_L);
+  const CAP_H = 0.5 * (FLOOR - 150);
   function makeGroupGeom(members, st = ST, exp = EXP) {
     let area = 0, ox = 0, oy = 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const id of members) {
       const p = st.pieces[id];
       area += p.area; ox += p.cx * p.area; oy += p.cy * p.area;
+      minX = Math.min(minX, p.bbox.minX); maxX = Math.max(maxX, p.bbox.maxX);
+      minY = Math.min(minY, p.bbox.minY); maxY = Math.max(maxY, p.bbox.maxY);
     }
     ox /= area; oy /= area;
-    return { area, ox, oy, s: scaleFor(area, st, exp) };
+    let s = scaleFor(area, st, exp);
+    // 完成した最後のかたまりは上限なし（演出で大きく見せる）
+    const count = members.size != null ? members.size : members.length;
+    if (st.cap && count < st.ids.length) s = Math.min(s, CAP_W / (maxX - minX), CAP_H / (maxY - minY));
+    return { area, ox, oy, s };
   }
 
   function createGroupBody(members, x, y) {
@@ -1451,6 +1461,7 @@
     partCenter(pid) { for (const g of groups) { const ps = g.body.parts.filter((q) => q.plugin && q.plugin.pid === pid); if (ps.length) { let x = 0, y = 0, a = 0; for (const q of ps) { x += q.position.x * q.area; y += q.position.y * q.area; a += q.area; } return { x: x / a, y: y / a, top: Math.min(...ps.map((q) => q.bounds.min.y)) }; } } return null; },
     setCurrent(id) { current = { id, bb: groupBoundsAt([id]) }; },
     get lastTouch() { return lastTouch; },
+    bounds(id) { const b = groupBoundsAt([id]); return { w: b.maxX - b.minX, h: b.maxY - b.minY }; },
     groupsInfo: () => groups.map((g) => ({ m: [...g.members], x: g.body.position.x, y: g.body.position.y })),
     queueIds: () => queue.slice(),
   };
