@@ -198,7 +198,9 @@
       for (const hull of ST.pieces[id].hullPts) {
         const verts = hull.map((v) => ({ x: x + (v.x - geom.ox) * geom.s, y: y + (v.y - geom.oy) * geom.s }));
         const c = Vertices.centre(verts);
-        bodyParts.push(Bodies.fromVertices(c.x, c.y, [verts], {}, false));
+        const part = Bodies.fromVertices(c.x, c.y, [verts], {}, false);
+        part.plugin = { pid: id };   // このパーツがどの県（国）のものか
+        bodyParts.push(part);
       }
     }
     const body = Body.create({
@@ -358,12 +360,19 @@
 
   // ---------- merging ----------
   let pending = [];
+  let lastTouch = null;   // デバッグ用: 最後にくっついたパーツ（県）の組
+  // くっつくのは「ふれ合ったパーツどうし」が地図でとなりの県（国）のときだけ。
+  // 大きなかたまりでも、となりではない県の部分にふれただけではくっつかない。
   function onCollide(ev) {
     for (const pair of ev.pairs) {
       const a = pair.bodyA.parent.plugin.group;
       const b = pair.bodyB.parent.plugin.group;
       if (!a || !b || a === b) continue;
-      pending.push([a, b]);
+      const pa = pair.bodyA.plugin && pair.bodyA.plugin.pid;
+      const pb = pair.bodyB.plugin && pair.bodyB.plugin.pid;
+      if (pa == null || pb == null) continue;
+      if (!ST.pieces[pa] || !ST.pieces[pa].adjSet.has(pb)) continue;
+      pending.push([a, b, pa, pb]);
     }
   }
 
@@ -378,9 +387,9 @@
   function processMerges() {
     if (!pending.length) return;
     const used = new Set();
-    for (const [a, b] of pending) {
+    for (const [a, b, pa, pb] of pending) {
       if (used.has(a) || used.has(b) || a.dead || b.dead) continue;
-      if (!adjacent(a, b)) continue;
+      lastTouch = [pa, pb];
       used.add(a); used.add(b);
       merge(a, b);
     }
@@ -830,10 +839,6 @@
         ctx.shadowColor = g.glowColor;
         ctx.shadowBlur = 26 + 12 * Math.sin(now / 110);
         ctx.shadowOffsetY = 0;
-      } else if (hinted) {
-        ctx.shadowColor = "rgba(255,190,40,.95)";
-        ctx.shadowBlur = 14 + 8 * Math.sin(now / 180);
-        ctx.shadowOffsetY = 0;
       } else {
         ctx.shadowColor = g.gold ? "rgba(232,185,49,.8)" : "rgba(59,50,38,.18)";
         ctx.shadowBlur = g.gold ? 24 + 8 * Math.sin(now / 200) : 6;
@@ -841,6 +846,15 @@
       }
       groupTransform(g);
       drawGroupShapes(ctx, g.members, g.geom, g.gold, 1, ST, g.flash);
+      if (hinted) {
+        // かんたんモード: くっつける「となりの県（国）」だけを光らせる
+        ctx.shadowColor = "rgba(255,180,0,.95)";
+        ctx.shadowBlur = 10;
+        ctx.lineJoin = "round";
+        ctx.lineWidth = (3.2 + Math.sin(now / 160)) / g.geom.s;
+        ctx.strokeStyle = "#ffb400";
+        for (const id of g.members) if (ST.pieces[hintId].adjSet.has(id)) ctx.stroke(ST.pieces[id].path);
+      }
       ctx.restore();
     }
     for (const g of groups) {
@@ -1194,6 +1208,12 @@
       }
     },
     STAGES,
+    // テスト用: かたまりを置く / パーツの位置
+    spawn(members, x, y) { const g = createGroupBody(members, x, y); Body.setPosition(g.body, { x, y }); Composite.add(world, g.body); groups.push(g); queue = queue.filter((q) => !members.includes(q)); return groups.length; },
+    clearBox() { for (const g of groups) Composite.remove(world, g.body); groups = []; current = null; queue = []; },
+    partCenter(pid) { for (const g of groups) { const ps = g.body.parts.filter((q) => q.plugin && q.plugin.pid === pid); if (ps.length) { let x = 0, y = 0, a = 0; for (const q of ps) { x += q.position.x * q.area; y += q.position.y * q.area; a += q.area; } return { x: x / a, y: y / a, top: Math.min(...ps.map((q) => q.bounds.min.y)) }; } } return null; },
+    setCurrent(id) { current = { id, bb: groupBoundsAt([id]) }; },
+    get lastTouch() { return lastTouch; },
     groupsInfo: () => groups.map((g) => ({ m: [...g.members], x: g.body.position.x, y: g.body.position.y })),
     queueIds: () => queue.slice(),
   };
