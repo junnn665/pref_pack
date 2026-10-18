@@ -99,6 +99,7 @@ python3 -m http.server 8000
 | `js/asia.js` | アジア 46 か国の形・隣接データ（`tools/build_asia.py` で自動生成） |
 | `vendor/matter.min.js` | 物理エンジン [Matter.js](https://brm.io/matter-js/)（MIT） |
 | `tools/build_prefs.py` | 地図データから `js/prefs.js` を作るスクリプト |
+| `tools/build_hulls.js` | 当たり判定を県・国の本当の形に合わせて作るスクリプト |
 | `icons/` / `manifest.webmanifest` | ホーム画面用アイコン（iPhone・Android）とアプリ設定 |
 | `tools/build_icon.py` | 県の形データからアイコン SVG を作るスクリプト |
 
@@ -111,8 +112,14 @@ python3 -m http.server 8000
 
 ```sh
 curl -LO https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson
+curl -LO https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson
+pip install shapely && npm install poly-decomp@0.3.0
 python3 tools/build_prefs.py japan.geojson js/prefs.js
+python3 tools/build_asia.py ne_50m_admin_0_countries.geojson js/asia.js
+node tools/build_hulls.js js/prefs.js js/asia.js   # 当たり判定を本当の形（凸パーツの組み合わせ）にする
 ```
+
+当たり判定の形は URL に `?hitbox` を付けると赤い線で表示されます。
 
 ## クレジット
 

@@ -892,6 +892,19 @@
       }
       ctx.restore();
     }
+    if (window.__showHitbox) {
+      // デバッグ: 当たり判定の形を表示（URL に ?hitbox を付ける）
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(220,0,60,.8)";
+      for (const g of groups) for (const part of g.body.parts.slice(1)) {
+        ctx.beginPath();
+        part.vertices.forEach((v, i) => (i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)));
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     drawFinalTimer();
     for (const f of fx) if (f.type !== "rays") drawFx(f);
   }
@@ -1099,6 +1112,7 @@
     ctx.restore();
   }
 
+  window.__showHitbox = /[?&]hitbox/.test(location.search);
   window.addEventListener("resize", resize);
   resize();
   requestAnimationFrame(frame);
