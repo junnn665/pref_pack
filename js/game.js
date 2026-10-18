@@ -90,14 +90,14 @@
       "#b6a3e6", // 中国
       "#f3cd52", // 四国
       "#ef8a7c", // 九州・沖縄
-    ], { key: "japan", name: "日本", finalName: "日本列島", regionName: (r) => `${r}地方`, skipRegions: [0], clearBonus: 3000, par: 240 }),
+    ], { key: "japan", name: "日本", finalName: "日本列島", regionName: (r) => `${r}地方`, skipRegions: [0], clearBonus: 3000, par: 240, finalTime: 60 }),
     asia: buildStage(window.ASIA_DATA, [
       "#ef8a7c", // 東アジア
       "#86cfb0", // 東南アジア
       "#f5ae62", // 南アジア
       "#7fb7e8", // 中央アジア
       "#b6a3e6", // 西アジア
-    ], { key: "asia", name: "アジア", finalName: "アジア大陸", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025 }),
+    ], { key: "asia", name: "アジア", finalName: "アジア大陸", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90 }),
   };
   let ST = STAGES.japan;
 
@@ -149,6 +149,9 @@
   let fx = [];
   let now = 0;
   let completeAt = 0;
+  let finalStart = 0;        // 最後のピースを落とした時刻（ここから制限時間スタート）
+  let timeUp = false;
+  const finalLeft = () => (finalStart ? ST.finalTime * 1000 - (now - finalStart) : Infinity);
   let stageStart = 0;
   let lap = 1;
   let cleared = [];          // 完成させたステージ ["日本列島", "アジア大陸", ...]
@@ -280,6 +283,8 @@
     ended = false;
     paused = false;
     completeAt = 0;
+    finalStart = 0;
+    timeUp = false;
     stageStart = now;
     current = null;
     pending = [];
@@ -333,6 +338,11 @@
     Composite.add(world, g.body);
     groups.push(g);
     canDropAt = now + DROP_COOLDOWN;
+    if (!queue.length && !finalStart) {
+      // 最後のピース → ここから制限時間
+      finalStart = now;
+      fx.push({ type: "banner", t0: now + 200, dur: 1700, text: "ラスト！", sub: `${ST.finalTime}秒以内に${ST.finalName}を完成させよう`, color: "#e85d4a" });
+    }
     current = null;
     vibrate(8);
     updateHud();
@@ -514,7 +524,7 @@
 
     const reached = cleared.length ? cleared[cleared.length - 1] : "";
     lastResult = { mode, score, reached, laps: lap, stages: cleared.length };
-    ui.resultTitle.textContent = cleared.length ? (clearedNow && completeAt ? `${ST.finalName} 完成！` : "おつかれさま！") : "ゲームオーバー";
+    ui.resultTitle.textContent = cleared.length ? (clearedNow && completeAt ? `${ST.finalName} 完成！` : "おつかれさま！") : timeUp ? "タイムアップ" : "ゲームオーバー";
     const left = groups.length + (current ? 1 : 0) + queue.length;
     ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared.length
       ? `${cleared.join(" → ")} まで完成`
@@ -555,6 +565,11 @@
     }
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
     if (overTimer > OVER_LIMIT && !completeAt) endGame(false);
+    if (finalStart && !completeAt && !ended && finalLeft() <= 0) {
+      timeUp = true;
+      fx.push({ type: "banner", t0: now, dur: 1400, text: "タイムアップ", sub: "", color: "#3b3226" });
+      endGame(false);
+    }
 
     const shuffleReady = now >= shuffleReadyAt;
     if (ui.shuffleBtn.disabled === shuffleReady) ui.shuffleBtn.disabled = !shuffleReady;
@@ -865,7 +880,32 @@
       }
       ctx.restore();
     }
+    drawFinalTimer();
     for (const f of fx) if (f.type !== "rays") drawFx(f);
+  }
+
+  // 最後のピースのあとの残り時間（箱の上に大きく）
+  function drawFinalTimer() {
+    if (!finalStart || completeAt) return;
+    const left = Math.max(0, finalLeft());
+    const sec = Math.ceil(left / 1000);
+    const hurry = sec <= 10;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const pulse = hurry ? 1 + 0.08 * Math.max(0, Math.cos(((left % 1000) / 1000) * Math.PI * 2)) : 1;
+    ctx.translate(W / 2, 62);
+    ctx.scale(pulse, pulse);
+    ctx.font = `800 13px ${FONT}`;
+    ctx.fillStyle = hurry ? "#c2402f" : "#8a7b66";
+    ctx.fillText(`${ST.finalName}まで あと`, 0, -30);
+    ctx.font = `800 52px ${FONT}`;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "#ffffff";
+    ctx.strokeText(`${sec}`, 0, 8);
+    ctx.fillStyle = hurry ? "#e85d4a" : "#3b3226";
+    ctx.fillText(`${sec}`, 0, 8);
+    ctx.restore();
   }
 
   function drawNext() {
@@ -1101,7 +1141,7 @@
 
   // debugging / tests
   window.__prefpack = {
-    get state() { return { multi: !!hooks, mode, stage: ST.key, lap, score, parts: { ...parts }, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone], cleared: [...cleared], fx: fx.length, particles: particles.length }; },
+    get state() { return { finalLeft: finalStart ? Math.round(finalLeft()) : null, timeUp, multi: !!hooks, mode, stage: ST.key, lap, score, parts: { ...parts }, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone], cleared: [...cleared], fx: fx.length, particles: particles.length }; },
     newGame, drop, doShuffle, setAim: (x) => { aimX = clampAim(x); },
     fastForward(ms) { if (!engine) return; const n = Math.round(ms / STEP); for (let i = 0; i < n && !ended; i++) { now += STEP; update(STEP); } },
     skipCooldown() { canDropAt = 0; shuffleReadyAt = 0; if (!current) nextPiece(); },
