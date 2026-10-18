@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>つなげて！都道府県パック</title>
+  <meta name="description" content="都道府県を箱に落として詰めるパズル。地図で隣り合う県同士がくっついて地方になり、最後は日本列島に。">
+  <meta name="theme-color" content="#f6efe2">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="hud">
+      <div class="stat">
+        <span class="label">スコア</span>
+        <span class="value" id="score">0</span>
+      </div>
+      <div class="stat">
+        <span class="label">のこり</span>
+        <span class="value" id="remain">47</span>
+      </div>
+      <div class="next">
+        <span class="label">つぎ</span>
+        <canvas id="nextCanvas" width="96" height="96"></canvas>
+        <span class="next-name" id="nextName">—</span>
+      </div>
+    </header>
+
+    <main class="stage" id="stage">
+      <canvas id="game"></canvas>
+      <div class="toast" id="toast"></div>
+    </main>
+
+    <footer class="controls">
+      <button class="btn ghost" id="menuBtn" aria-label="メニュー">☰</button>
+      <button class="btn shuffle" id="shuffleBtn">
+        シャッフル <span class="badge" id="shuffleCount">3</span>
+      </button>
+    </footer>
+
+    <!-- start -->
+    <section class="overlay" id="startScreen">
+      <div class="card">
+        <h1 class="title">つなげて！<br><span>都道府県パック</span></h1>
+        <ul class="rules">
+          <li><b>タップ／ドラッグ</b>で位置を決めて、はなすと落ちる</li>
+          <li>地図で<b>隣り合う県</b>がふれると、くっつく</li>
+          <li>地方がそろうとボーナス＆シャッフル+1</li>
+          <li>線より上にあふれたら終わり</li>
+          <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
+        </ul>
+        <button class="btn primary" id="startBtn">スタート</button>
+        <p class="best">ベスト <span id="bestScore">0</span></p>
+      </div>
+    </section>
+
+    <!-- menu -->
+    <section class="overlay hidden" id="menuScreen">
+      <div class="card">
+        <h2>ひとやすみ</h2>
+        <button class="btn primary" id="resumeBtn">つづける</button>
+        <button class="btn" id="restartBtn">はじめから</button>
+      </div>
+    </section>
+
+    <!-- result -->
+    <section class="overlay hidden" id="resultScreen">
+      <div class="card">
+        <h2 id="resultTitle">ゲームオーバー</h2>
+        <p class="result-sub" id="resultSub"></p>
+        <p class="result-score"><span id="resultScore">0</span><small>点</small></p>
+        <div class="regions" id="resultRegions"></div>
+        <button class="btn primary" id="againBtn">もう一度</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="vendor/matter.min.js"></script>
+  <script src="js/prefs.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
