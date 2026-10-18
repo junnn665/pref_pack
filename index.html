@@ -38,7 +38,7 @@
     <footer class="controls">
       <button class="btn ghost" id="menuBtn" aria-label="メニュー">☰</button>
       <button class="btn shuffle" id="shuffleBtn">
-        シャッフル <span class="badge" id="shuffleCount">3</span>
+        シャッフル
       </button>
     </footer>
 
@@ -49,12 +49,19 @@
         <ul class="rules">
           <li><b>タップ／ドラッグ</b>で位置を決めて、はなすと落ちる</li>
           <li>地図で<b>隣り合う県</b>がふれると、くっつく</li>
-          <li>地方がそろうとボーナス＆シャッフル+1</li>
+          <li>地方がそろうとボーナス。<b>シャッフル</b>は何回でもOK</li>
           <li>線より上にあふれたら終わり</li>
           <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
         </ul>
-        <button class="btn primary" id="startBtn">スタート</button>
-        <p class="best">ベスト <span id="bestScore">0</span></p>
+        <div class="modes">
+          <button class="btn primary mode-btn" id="startBtn">
+            ふつう<small>ベスト <span id="bestNormal">0</span></small>
+          </button>
+          <button class="btn easy mode-btn" id="startEasyBtn">
+            かんたん<small>ベスト <span id="bestEasy">0</span></small>
+          </button>
+        </div>
+        <p class="mode-note">かんたん：ピースが小さめ・おとなりの県が出やすい・くっつく相手が光る</p>
       </div>
     </section>
 
@@ -64,6 +71,7 @@
         <h2>ひとやすみ</h2>
         <button class="btn primary" id="resumeBtn">つづける</button>
         <button class="btn" id="restartBtn">はじめから</button>
+        <button class="btn" id="titleBtn">モードをえらびなおす</button>
       </div>
     </section>
 
@@ -75,6 +83,7 @@
         <p class="result-score"><span id="resultScore">0</span><small>点</small></p>
         <div class="regions" id="resultRegions"></div>
         <button class="btn primary" id="againBtn">もう一度</button>
+        <button class="btn" id="resultTitleBtn">モードをえらびなおす</button>
       </div>
     </section>
   </div>

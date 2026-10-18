@@ -14,12 +14,24 @@
   const BOX_L = WALL;
   const BOX_R = W - WALL;
   const FLOOR = H - WALL;
-  const LINE_Y = 150;       // overflow line
   const HANG_Y = 74;        // where the current piece hangs
-  const EXP = 0.25;         // group linear size ∝ area^EXP (shrinks big groups)
   const DROP_COOLDOWN = 450;
-  const OVER_LIMIT = 2200;  // ms above the line before game over
-  const START_SHUFFLES = 3;
+  const SHUFFLE_COOLDOWN = 1200;
+
+  // ゲームモード
+  //  exp:       合体時の縮み具合（大きいほど 1 県のピースが小さく、詰めやすい）
+  //  lineY:     あふれラインの高さ（小さいほど上＝余裕が増える）
+  //  overLimit: ラインを超えてからゲームオーバーまでの猶予(ms)
+  //  neighbor:  次の県を「すでに箱にある県のおとなり」から出やすくする
+  //  hint:      今落とす県とくっつけるかたまりを光らせる
+  const MODES = {
+    normal: { name: "ふつう", exp: 0.25, lineY: 150, overLimit: 2200, neighbor: false, hint: false },
+    easy:   { name: "かんたん", exp: 0.32, lineY: 130, overLimit: 4000, neighbor: true, hint: true },
+  };
+  let mode = "normal";
+  let LINE_Y = MODES.normal.lineY;   // overflow line
+  let EXP = MODES.normal.exp;        // group linear size ∝ area^EXP (shrinks big groups)
+  let OVER_LIMIT = MODES.normal.overLimit;
 
   const REGION_COLORS = [
     "#7fb7e8", // 北海道
@@ -51,7 +63,7 @@
   const ALL_IDS = Object.keys(PREFS).map(Number);
   const [EXT_W, EXT_H] = DATA.extent;
   // whole Japan must fit in the box with margin
-  const S_TOTAL = Math.min((BOX_R - BOX_L - 30) / EXT_W, (FLOOR - LINE_Y - 40) / EXT_H);
+  const S_TOTAL = Math.min((BOX_R - BOX_L - 30) / EXT_W, (FLOOR - 150 - 40) / EXT_H);
 
   function scaleFor(area) {
     return S_TOTAL * Math.pow(area / TOTAL_AREA, EXP - 0.5);
@@ -65,9 +77,9 @@
   const nctx = nextCanvas.getContext("2d");
   const ui = {
     score: $("score"), remain: $("remain"), nextName: $("nextName"),
-    shuffleBtn: $("shuffleBtn"), shuffleCount: $("shuffleCount"), toast: $("toast"),
+    shuffleBtn: $("shuffleBtn"), toast: $("toast"),
     start: $("startScreen"), menu: $("menuScreen"), result: $("resultScreen"),
-    best: $("bestScore"), resultTitle: $("resultTitle"), resultSub: $("resultSub"),
+    bestNormal: $("bestNormal"), bestEasy: $("bestEasy"), resultTitle: $("resultTitle"), resultSub: $("resultSub"),
     resultScore: $("resultScore"), resultRegions: $("resultRegions"),
   };
 
@@ -85,8 +97,9 @@
   let aimX = W / 2;
   let canDropAt = 0;
   let score = 0;
-  let best = store.get("prefpack.best", 0);
-  let shuffles = START_SHUFFLES;
+  const best = { normal: store.get("prefpack.best.normal", store.get("prefpack.best", 0)), easy: store.get("prefpack.best.easy", 0) };
+  let shuffleReadyAt = 0;
+  let shufflesUsed = 0;
   let regionsDone = new Set();
   let running = false;
   let paused = false;
@@ -99,7 +112,8 @@
   let now = 0;
   let completeAt = 0;
 
-  ui.best.textContent = best;
+  showBest();
+  function showBest() { ui.bestNormal.textContent = best.normal; ui.bestEasy.textContent = best.easy; }
 
   // ---------- group creation ----------
   // A "group" is a set of prefectures rendered in true map arrangement,
@@ -177,7 +191,10 @@
     return a;
   }
 
-  function newGame() {
+  function newGame(m) {
+    if (m) mode = m;
+    const M = MODES[mode];
+    EXP = M.exp; LINE_Y = M.lineY; OVER_LIMIT = M.overLimit;
     engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
     engine.gravity.y = 1;
     world = engine.world;
@@ -193,7 +210,8 @@
     groups = [];
     queue = shuffleArray(ALL_IDS.slice());
     score = 0;
-    shuffles = START_SHUFFLES;
+    shuffleReadyAt = 0;
+    shufflesUsed = 0;
     regionsDone = new Set();
     overTimer = 0;
     idleTimer = 0;
@@ -213,8 +231,22 @@
     const id = queue.shift();
     const bb = groupBoundsAt([id]);
     current = { id, bb };
+    if (MODES[mode].neighbor) arrangeNeighborNext();
     aimX = clampAim(aimX);
     drawNext();
+  }
+
+  // かんたんモード: 次の県を、箱の中か今の県のおとなりから選びやすくする
+  function arrangeNeighborNext() {
+    if (queue.length < 2 || Math.random() > 0.8) return;
+    const placed = new Set(current ? [current.id] : []);
+    for (const g of groups) for (const id of g.members) placed.add(id);
+    const cands = [];
+    queue.forEach((id, i) => { for (const p of placed) if (PREFS[id].adjSet.has(p)) { cands.push(i); break; } });
+    if (!cands.length) return;
+    const i = cands[(Math.random() * cands.length) | 0];
+    const [id] = queue.splice(i, 1);
+    queue.unshift(id);
   }
 
   function clampAim(x) {
@@ -312,14 +344,13 @@
       if (ids.every((id) => g.members.has(id))) {
         regionsDone.add(ri);
         score += 300;
-        shuffles += 1;
         toast(`${DATA.regions[ri]}地方 そろった！ +300`, true);
       }
     });
   }
 
   function completeJapan(g) {
-    const bonus = 3000 + shuffles * 200;
+    const bonus = 3000 + Math.max(0, 10 - shufflesUsed) * 100;
     score += bonus;
     completeAt = now;
     toast("日本列島 完成！！", true);
@@ -330,8 +361,9 @@
 
   // ---------- shuffle ----------
   function doShuffle() {
-    if (!running || paused || ended || shuffles <= 0) return;
-    shuffles--;
+    if (!running || paused || ended || now < shuffleReadyAt) return;
+    shuffleReadyAt = now + SHUFFLE_COOLDOWN;
+    shufflesUsed++;
     for (const g of groups) {
       Body.setVelocity(g.body, { x: (Math.random() - 0.5) * 9, y: -4 - Math.random() * 7 });
       Body.setAngularVelocity(g.body, (Math.random() - 0.5) * 0.25);
@@ -347,13 +379,13 @@
     if (ended) return;
     ended = true;
     running = false;
-    if (score > best) { best = score; store.set("prefpack.best", best); }
-    ui.best.textContent = best;
+    if (score > best[mode]) { best[mode] = score; store.set(`prefpack.best.${mode}`, score); }
+    showBest();
     ui.resultTitle.textContent = cleared ? "日本列島 完成！" : "ゲームオーバー";
     const left = groups.length + (current ? 1 : 0) + queue.length;
-    ui.resultSub.textContent = cleared
+    ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared
       ? "47 都道府県がひとつにつながった！"
-      : `のこり ${left} かたまり`;
+      : `のこり ${left} かたまり`);
     ui.resultScore.textContent = score;
     ui.resultRegions.innerHTML = "";
     DATA.regions.forEach((name, ri) => {
@@ -382,12 +414,9 @@
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
     if (overTimer > OVER_LIMIT && !completeAt) endGame(false);
 
-    // stuck at the end: nothing left to drop, no shuffles, everything still
-    if (!current && !queue.length && shuffles === 0 && !completeAt) {
-      const moving = groups.some((g) => g.body.speed > 0.4);
-      idleTimer = moving ? 0 : idleTimer + dt;
-      if (idleTimer > 2500) endGame(false);
-    }
+    // shuffle button cooldown
+    const shuffleReady = now >= shuffleReadyAt;
+    if (ui.shuffleBtn.disabled === shuffleReady) ui.shuffleBtn.disabled = !shuffleReady;
 
     for (const p of particles) {
       p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life -= dt;
@@ -512,12 +541,20 @@
     drawBox();
 
     // groups
+    const hintId = MODES[mode].hint && current && !ended ? current.id : null;
     for (const g of groups) {
       ctx.save();
-      // soft shadow
-      ctx.shadowColor = g.gold ? "rgba(232,185,49,.8)" : "rgba(59,50,38,.18)";
-      ctx.shadowBlur = g.gold ? 24 + 8 * Math.sin(now / 200) : 6;
-      ctx.shadowOffsetY = g.gold ? 0 : 2;
+      const hinted = hintId != null && [...g.members].some((id) => PREFS[hintId].adjSet.has(id));
+      // soft shadow (かんたんモード: くっつけるかたまりを光らせる)
+      if (hinted) {
+        ctx.shadowColor = "rgba(255,190,40,.95)";
+        ctx.shadowBlur = 14 + 8 * Math.sin(now / 180);
+        ctx.shadowOffsetY = 0;
+      } else {
+        ctx.shadowColor = g.gold ? "rgba(232,185,49,.8)" : "rgba(59,50,38,.18)";
+        ctx.shadowBlur = g.gold ? 24 + 8 * Math.sin(now / 200) : 6;
+        ctx.shadowOffsetY = g.gold ? 0 : 2;
+      }
       groupTransform(g);
       drawGroupShapes(ctx, g.members, g.geom, g.gold);
       ctx.restore();
@@ -618,8 +655,7 @@
   function updateHud() {
     ui.score.textContent = score;
     ui.remain.textContent = queue.length + (current ? 1 : 0);
-    ui.shuffleCount.textContent = shuffles;
-    ui.shuffleBtn.disabled = shuffles <= 0 || !running;
+    ui.shuffleBtn.disabled = !running || now < shuffleReadyAt;
     drawNext();
   }
 
@@ -673,8 +709,21 @@
   ui.shuffleBtn.addEventListener("click", doShuffle);
   $("startBtn").addEventListener("click", () => {
     ui.start.classList.add("hidden");
-    newGame();
+    newGame("normal");
   });
+  $("startEasyBtn").addEventListener("click", () => {
+    ui.start.classList.add("hidden");
+    newGame("easy");
+  });
+  const toTitle = () => {
+    running = false; ended = true; engine = null; groups = []; current = null;
+    ui.menu.classList.add("hidden");
+    ui.result.classList.add("hidden");
+    ui.start.classList.remove("hidden");
+    score = 0; queue = ALL_IDS.slice(); updateHud();
+  };
+  $("titleBtn").addEventListener("click", toTitle);
+  $("resultTitleBtn").addEventListener("click", toTitle);
   $("menuBtn").addEventListener("click", () => {
     if (!running) return;
     paused = true;
@@ -735,10 +784,10 @@
 
   // expose for debugging / tests
   window.__prefpack = {
-    get state() { return { score, groups: groups.length, queue: queue.length, current: current && current.id, ended, shuffles, regionsDone: [...regionsDone] }; },
+    get state() { return { mode, score, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone] }; },
     newGame, drop, doShuffle, setAim: (x) => { aimX = clampAim(x); },
     fastForward(ms) { const n = Math.round(ms / STEP); for (let i = 0; i < n && !ended; i++) { now += STEP; update(STEP); } },
-    skipCooldown() { canDropAt = 0; if (!current) nextPiece(); },
+    skipCooldown() { canDropAt = 0; shuffleReadyAt = 0; if (!current) nextPiece(); },
     S_TOTAL, scaleFor, TOTAL_AREA,
   };
 })();
