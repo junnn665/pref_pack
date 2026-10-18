@@ -1273,7 +1273,13 @@
     document.body.classList.toggle("multi", !!hooks);
     ui.menu.classList.remove("hidden");
   });
-  const showFactsLabel = () => { $("factsBtn").textContent = `豆知識：${factsOn ? "ON" : "OFF"}`; };
+  const showFactsLabel = () => {
+    $("factsBtn").textContent = `豆知識：${factsOn ? "ON" : "OFF"}`;
+    // OFF のときは帯ごと消して、そのぶん箱を大きく
+    const was = document.body.classList.contains("facts-off");
+    document.body.classList.toggle("facts-off", !factsOn);
+    if (was === factsOn) window.dispatchEvent(new Event("resize"));
+  };
   showFactsLabel();
   $("factsBtn").addEventListener("click", () => { factsOn = !factsOn; store.set("prefpack.facts", factsOn); showFactsLabel(); });
   $("resumeBtn").addEventListener("click", () => {

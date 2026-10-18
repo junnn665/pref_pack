@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261019-1">
+  <link rel="stylesheet" href="style.css?v=20261019-2">
 </head>
 <body>
   <div id="app">
@@ -37,6 +37,9 @@
       </div>
     </header>
 
+    <!-- 豆知識（箱の外の細い帯に出す） -->
+    <div class="fact-row" id="factRow"><div class="fact" id="fact"></div></div>
+
     <!-- 対戦相手の箱（対戦中のみ表示） -->
     <div class="rivals hidden" id="rivals"></div>
 
@@ -44,7 +47,6 @@
       <canvas id="game"></canvas>
       <div class="toast" id="toast"></div>
       <div class="countdown hidden" id="countdown"></div>
-      <div class="fact" id="fact"></div>
       <div class="stamp-bar hidden" id="stampBar"><button data-stamp="👍">👍</button><button data-stamp="😂">😂</button><button data-stamp="😱">😱</button><button data-stamp="🔥">🔥</button><button data-stamp="うわー">うわー</button><button data-stamp="ナイス！">ナイス！</button><button data-stamp="まだまだ！">まだまだ！</button></div>
       <div class="my-stamp" id="myStamp"></div>
     </main>
@@ -231,14 +233,14 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261019-1"></script>
-  <script src="js/prefs.js?v=20261019-1"></script>
-  <script src="js/asia.js?v=20261019-1"></script>
-  <script src="js/world.js?v=20261019-1"></script>
-  <script src="js/capitals.js?v=20261019-1"></script>
-  <script src="js/facts.js?v=20261019-1"></script>
-  <script src="js/game.js?v=20261019-1"></script>
-  <script src="lib/qrcode.min.js?v=20261019-1"></script>
-  <script src="js/net.js?v=20261019-1"></script>
+  <script src="vendor/matter.min.js?v=20261019-2"></script>
+  <script src="js/prefs.js?v=20261019-2"></script>
+  <script src="js/asia.js?v=20261019-2"></script>
+  <script src="js/world.js?v=20261019-2"></script>
+  <script src="js/capitals.js?v=20261019-2"></script>
+  <script src="js/facts.js?v=20261019-2"></script>
+  <script src="js/game.js?v=20261019-2"></script>
+  <script src="lib/qrcode.min.js?v=20261019-2"></script>
+  <script src="js/net.js?v=20261019-2"></script>
 </body>
 </html>

@@ -523,3 +523,16 @@ body.in-match .btn.stamp-btn { display: block; }
 }
 .rivals { padding-top: 34px; margin-top: -30px; }
 @keyframes bubble { 0% { opacity: 0; transform: translate(-50%, -80%) scale(.6); } 12% { opacity: 1; transform: translate(-50%, -100%) scale(1.08); } 20% { transform: translate(-50%, -100%) scale(1); } 85% { opacity: 1; } 100% { opacity: 0; } }
+
+/* trivia: 箱の外（ヘッダーの下）の帯に表示 */
+.fact-row { position: relative; flex: none; height: 30px; margin: -2px 0; }
+body.facts-off .fact-row { display: none; }
+.fact-row .fact {
+  top: 0; bottom: auto; max-width: 100%;
+  transform: translate(-50%, -4px);
+  padding: 3px 12px 3px 3px; font-size: 12px;
+  box-shadow: 0 3px 8px rgba(59, 50, 38, .14);
+}
+.fact-row .fact.show { transform: translate(-50%, 0); }
+.fact-row .fact b { padding: 2px 8px; }
+.fact-row .fact span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
