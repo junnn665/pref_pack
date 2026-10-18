@@ -14,9 +14,13 @@
 - 点線より上にあふれたままだとゲームオーバー
 - 1 ピースの持ち時間は 8 秒（かんたんは 12 秒）。過ぎるとその位置で自動で落ちる
 - 最後のピースを落とすとカウントダウン開始。日本列島は 60 秒、アジア大陸は 90 秒以内に完成させないとタイムアップ
-- 日本列島が完成したら、そのまま**アジア大陸**（46 か国、隣り合う国がくっつく）へ。完成した日本は小さく縮んで、金色の「日本」として最初から箱に入っている（ここから世界を広げていく）
-- アジア大陸も完成させたら**全クリア**（スコアは合計）
-- 日本列島を一度完成させると、タイトルの「エクストラステージ」からアジア大陸だけを遊ぶこともできる
+- **ホールド**：今のピースを横に取っておき、あとで入れかえられる（1回落とすまでに1回）
+- くっつくと**豆知識**（県庁所在地・名産、国なら首都）が出る。メニューで ON/OFF
+- 日本列島が完成したら、どんどん世界が広がる：
+  **日本 → アジア → ヨーロッパ → アフリカ → 世界**
+  - 各ステージは、それまでに完成させた部分（日本 / アジア / ユーラシア / ユーラシア・アフリカ）が金色のピースとして最初から箱に入っていて、そこに国をつなげていく
+  - 世界（南北アメリカ・オセアニア）まで完成させたら**全クリア**（スコアは合計）
+- 一度たどりついたステージは、タイトルの「エクストラステージ」から直接あそべる
 
 ## スコア
 
@@ -48,7 +52,10 @@
 2. ほかの人は「番号で参加」か、リンク／QR から参加
 3. ホストが「スタート」→ 3・2・1 で全員いっせいに開始（県の出る順番は全員同じ）
 
-ステージは部屋を作るとき（または待合室でホストがタップ）に選べます：**日本** / **アジア** / **日本→アジア**（日本列島のあと続けてアジア大陸）
+ステージは部屋を作るとき（または待合室でホストがタップ）に選べます：
+**日本** / **アジア** / **ヨーロッパ** / **アフリカ** / **世界** / **日本→アジア** / **ぜんぶ（日本→世界）**
+
+- 対戦中は 😀 ボタンから**スタンプ**（👍 😂 😱 🔥 うわー ナイス！ まだまだ！）を送れる。相手の箱の上に吹き出しで出る
 
 - 上の段に相手の箱がリアルタイムで小さく表示される
 - 地方をそろえると、相手のあふれ線が 10 秒間下がる（おじゃま。重なっても最大 15 秒）
@@ -102,6 +109,9 @@ python3 -m http.server 8000
 | `lib/qrcode.min.js` | 招待 QR（qrcode-generator, MIT） |
 | `js/prefs.js` | 都道府県の形・隣接データ（自動生成） |
 | `js/asia.js` | アジア 46 か国の形・隣接データ（`tools/build_asia.py` で自動生成） |
+| `js/world.js` | ヨーロッパ・アフリカ・世界ステージのデータ（`tools/build_world.py` で自動生成） |
+| `js/capitals.js` | 各国の首都（日本語名。`tools/build_world.py` で自動生成） |
+| `js/facts.js` | 都道府県の県庁所在地・名産 |
 | `vendor/matter.min.js` | 物理エンジン [Matter.js](https://brm.io/matter-js/)（MIT） |
 | `tools/build_prefs.py` | 地図データから `js/prefs.js` を作るスクリプト |
 | `tools/build_hulls.js` | 当たり判定を県・国の本当の形に合わせて作るスクリプト |
@@ -120,8 +130,10 @@ curl -LO https://raw.githubusercontent.com/dataofjapan/land/master/japan.geojson
 curl -LO https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson
 pip install shapely && npm install poly-decomp@0.3.0
 python3 tools/build_prefs.py japan.geojson js/prefs.js
+curl -LO https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places.geojson
 python3 tools/build_asia.py ne_50m_admin_0_countries.geojson js/asia.js
-node tools/build_hulls.js js/prefs.js js/asia.js   # 当たり判定を本当の形（凸パーツの組み合わせ）にする
+python3 tools/build_world.py ne_50m_admin_0_countries.geojson ne_50m_populated_places.geojson js/asia.js js/world.js js/capitals.js
+node tools/build_hulls.js js/prefs.js js/asia.js js/world.js   # 当たり判定を本当の形（凸パーツの組み合わせ）にする
 ```
 
 当たり判定の形は URL に `?hitbox` を付けると赤い線で表示されます。

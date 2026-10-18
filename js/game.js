@@ -105,12 +105,36 @@
       "#f5ae62", // 南アジア
       "#7fb7e8", // 中央アジア
       "#b6a3e6", // 西アジア
-    ], { key: "asia", name: "アジア", finalName: "アジア大陸", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90 }),
+    ], { key: "asia", name: "アジア", finalName: "アジア大陸", homeName: "日本", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90 }),
+    europe: buildStage(window.WORLD_DATA.europe, [
+      "#f2c94c", // (これまでのステージ)
+      "#7fb7e8", // 北ヨーロッパ
+      "#f29abf", // 西ヨーロッパ
+      "#f5ae62", // 南ヨーロッパ
+      "#a3d06a", // 東ヨーロッパ
+    ], { key: "europe", name: "ヨーロッパ", finalName: "ユーラシア大陸", homeName: "アジア", regionName: (r) => r, skipRegions: [0], clearBonus: 8000, par: 300, expAdd: 0.03, finalTime: 90 }),
+    africa: buildStage(window.WORLD_DATA.africa, [
+      "#f2c94c",
+      "#f5ae62", // 北アフリカ
+      "#ef8a7c", // 西アフリカ
+      "#86cfb0", // 中部アフリカ
+      "#a3d06a", // 東アフリカ
+      "#b6a3e6", // 南部アフリカ
+    ], { key: "africa", name: "アフリカ", finalName: "アフリカ大陸", homeName: "ユーラシア", regionName: (r) => r, skipRegions: [0], clearBonus: 10000, par: 330, expAdd: 0.03, finalTime: 100 }),
+    world: buildStage(window.WORLD_DATA.world, [
+      "#f2c94c",
+      "#7fb7e8", // 北アメリカ
+      "#f29abf", // 中央アメリカ
+      "#86cfb0", // カリブ海
+      "#a3d06a", // 南アメリカ
+      "#f5ae62", // オセアニア
+    ], { key: "world", name: "世界", finalName: "世界", homeName: "ユーラシア・アフリカ", regionName: (r) => r, skipRegions: [0], clearBonus: 15000, par: 330, expAdd: 0.03, finalTime: 100 }),
   };
-  // アジア大陸の中の「日本」は、完成させた日本列島として金色で描く
-  {
-    const jp = Object.values(STAGES.asia.pieces).find((p) => p.key === "JPN");
-    if (jp) { jp.color = "#f2c94c"; jp.stroke = "#b0861a"; jp.home = true; STAGES.asia.homeId = jp.id; }
+  const ORDER = ["japan", "asia", "europe", "africa", "world"];
+  // 前のステージで完成させた部分（アジアでは日本、ほかは HOME）は金色で描き、最初から箱に入れる
+  for (const st of ORDER.slice(1)) {
+    const home = Object.values(STAGES[st].pieces).find((p) => p.key === (st === "asia" ? "JPN" : "HOME"));
+    if (home) { home.color = "#f2c94c"; home.stroke = "#b0861a"; home.home = true; STAGES[st].homeId = home.id; }
   }
   let ST = STAGES.japan;
 
@@ -164,8 +188,10 @@
   let completeAt = 0;
   let pieceShownAt = 0;
   let locked = false;
-  let wonEarly = false;      // 対戦: 完成前に1位が確定した        // 対戦で最下位確定 → 操作できない      // いまのピースが出た時刻（落とすまでの持ち時間）
-  let chain = false;         // 対戦「日本→アジア」: 日本列島のあとアジア大陸へ続ける
+  let wonEarly = false;
+  let held = null;           // ホールド中のピース（ID）
+  let holdUsed = false;      // 1回落とすまでにホールドは1回だけ      // 対戦: 完成前に1位が確定した        // 対戦で最下位確定 → 操作できない      // いまのピースが出た時刻（落とすまでの持ち時間）
+  let chainTo = "world";     // どのステージまで続けるか（ひとりは世界まで。対戦は部屋の設定）
   let seedBase = null;
   let finalStart = 0;        // 最後のピースを落とした時刻（ここから制限時間スタート）
   let timeUp = false;
@@ -271,12 +297,16 @@
     LINE_Y = M.lineY + LAP_LINE * Math.min(lap - 1, 3);
     OVER_LIMIT = M.overLimit;
     seedBase = opts.seed || null;
-    chain = !!opts.chain;
+    chainTo = opts.chainTo || (opts.hooks ? (opts.stage || "japan") : "world");
     rand = opts.seed ? seeded(String(opts.seed)) : Math.random;
     hooks = opts.hooks || null;
     lineDownUntil = 0;
     locked = false;
     wonEarly = false;
+    held = null;
+    holdUsed = false;
+    if (!opts.keep) factShown = new Set();
+    $("fact").classList.remove("show");
 
     engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
     engine.gravity.y = 1;
@@ -314,8 +344,8 @@
     pending = [];
     [ui.start, ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
     ui.stageTag.textContent = stageLabel();
-    if (ST.key === "asia" && ST.homeId) {
-      // 日本はもう完成しているので、最初から箱の中に置いておく（ここから世界を広げていく）
+    if (ST.homeId) {
+      // これまで完成させた部分は、最初から箱の中に置いておく（ここから世界を広げていく）
       const jid = ST.homeId;
       queue = queue.filter((q) => q !== jid);
       const bb = groupBoundsAt([jid]);
@@ -323,8 +353,8 @@
       const g = createGroupBody([jid], x, y);
       Body.setPosition(g.body, { x: x + g.local.x, y: y + g.local.y });
       keepInside(g.body);
-      // 日本列島の大きさから、アジアの大きさまで縮んでいく演出
-      const J = STAGES.japan;
+      // 前のステージの完成形の大きさから、いまのステージの縮尺まで縮んでいく演出
+      const J = STAGES[ORDER[ORDER.indexOf(ST.key) - 1]] || STAGES.japan;
       g.shrinkFrom = Math.min(6, Math.max(1, J.sTotal / g.geom.s));
       g.shrinkDur = opts.keep ? 1600 : 900;
       g.glowUntil = now + 2400;
@@ -336,13 +366,17 @@
     updateHud();
     running = true;
     if (opts.keep || ST.key !== "japan") {
-      fx.push({ type: "banner", t0: now + (opts.keep ? 900 : 0), dur: 2200, text: opts.keep ? "世界が広がった！" : "エクストラステージ", sub: "日本からアジア大陸をつなげよう", color: "#3b6fd8" });
+      fx.push({ type: "banner", t0: now + (opts.keep ? 900 : 0), dur: 2200, text: opts.keep ? "世界が広がった！" : "エクストラステージ", sub: `${ST.homeName}から${ST.name === "世界" ? "世界" : ST.name}をつなげよう`, color: "#3b6fd8" });
     }
   }
-  const stageLabel = () => (ST.key === "asia" ? "アジア" : lap > 1 ? `日本 ${lap}周目` : "日本");
+  const stageLabel = () => ST.name;
 
   function nextPiece() {
-    if (!queue.length) { current = null; drawNext(); return; }
+    if (!queue.length) {
+      // 最後はホールド中のピースが出てくる
+      if (held != null) { const id = held; held = null; current = { id, bb: groupBoundsAt([id]) }; pieceShownAt = now; aimX = clampAim(aimX); drawNext(); return; }
+      current = null; drawNext(); return;
+    }
     const id = queue.shift();
     current = { id, bb: groupBoundsAt([id]) };
     pieceShownAt = now;
@@ -381,7 +415,8 @@
     Composite.add(world, g.body);
     groups.push(g);
     canDropAt = now + DROP_COOLDOWN;
-    if (!queue.length && !finalStart) {
+    holdUsed = false;
+    if (!queue.length && held == null && !finalStart) {
       // 最後のピース → ここから制限時間
       finalStart = now;
       fx.push({ type: "banner", t0: now + 200, dur: 1700, text: "ラスト！", sub: `${ST.finalTime}秒以内に${ST.finalName}を完成させよう`, color: "#e85d4a" });
@@ -390,6 +425,26 @@
     vibrate(8);
     updateHud();
     later(() => { if (running && !ended && !current) { nextPiece(); updateHud(); } }, DROP_COOLDOWN);
+  }
+
+  // ---------- hold ----------
+  function doHold() {
+    if (!running || paused || ended || locked || completeAt || !current) return;
+    if (holdUsed) { toast("ホールドは1回落とすまで1回だけ"); return; }
+    holdUsed = true;
+    if (held == null) {
+      held = current.id;
+      current = null;
+      nextPiece();
+      if (current) pieceShownAt = Math.min(pieceShownAt, now);
+    } else {
+      const h = held;
+      held = current.id;
+      current = { id: h, bb: groupBoundsAt([h]) };   // 持ち時間はそのまま（入れかえで時間かせぎはできない）
+      aimX = clampAim(aimX);
+    }
+    vibrate(10);
+    updateHud();
   }
 
   // ---------- merging ----------
@@ -484,9 +539,45 @@
     if (members.length >= 6) shake = Math.max(shake, 4 + Math.min(6, members.length / 4));
     vibrate(members.length > 10 ? 30 : 15);
 
+    showFact(a.members.size <= b.members.size ? a : b);
     checkRegions(g);
     if (g.gold) completeStage(g);
     updateHud();
+  }
+
+  // ---------- 豆知識（くっついたピースの県庁所在地・名産／首都） ----------
+  let factsOn = store.get("prefpack.facts", true);
+  let factShown = new Set();
+  let factTimer = 0;
+  function factText(p) {
+    if (ST.key === "japan") {
+      const f = (window.PREF_FACTS || {})[p.id];
+      return f ? `県庁所在地 ${f[0]}・名産 ${f[1]}` : "";
+    }
+    const cap = (window.CAPITALS || {})[p.key];
+    return cap ? `首都 ${cap}` : "";
+  }
+  function showFact(small) {
+    if (!factsOn || completeAt) return;
+    for (const id of small.members) {
+      const p = ST.pieces[id];
+      if (p.home || factShown.has(`${ST.key}:${id}`)) continue;
+      factShown.add(`${ST.key}:${id}`);
+      const t = factText(p);
+      if (!t) continue;
+      const el = $("fact");
+      el.innerHTML = "";
+      const b = document.createElement("b");
+      b.textContent = p.name;
+      b.style.background = p.color;
+      const sp = document.createElement("span");
+      sp.textContent = t;
+      el.append(b, sp);
+      el.classList.add("show");
+      clearTimeout(factTimer);
+      factTimer = setTimeout(() => el.classList.remove("show"), 2600);
+      return;
+    }
   }
 
   function checkRegions(g) {
@@ -524,25 +615,24 @@
     fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
     fx.push({ type: "rays", t0: now, dur: 3200, group: g });
     // 対戦で、最終ゴールを一番に完成させたら WINNER
-    const finalGoal = !(hooks && chain && ST.key === "japan");
+    const nextStage = ORDER[ORDER.indexOf(ST.key) + 1];
+    const finalGoal = ST.key === chainTo || !nextStage;
     const win = hooks && finalGoal && hooks.amFirst && hooks.amFirst();
     if (win) fx.push({ type: "banner", t0: now + 250, dur: 2700, text: "WINNER", sub: `${ST.finalName} 一番のり！`, color: "#e8a019", big: true });
     else fx.push({ type: "banner", t0: now + 250, dur: 2700, text: `${ST.finalName} 完成！`, sub: `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`, color: "#e8a019", big: true });
     for (let i = 0; i < 5; i++) later(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
-    if (ST.key === "japan" && !hooks) { store.set("prefpack.asiaUnlocked", true); showAsiaUnlock(); }
+    if (!hooks) { store.set("prefpack.unlocked", Math.max(unlockedLevel(), ORDER.indexOf(ST.key) + 1)); showAsiaUnlock(); }
     shake = 14;
     vibrate([40, 60, 40, 60, 120]);
     updateHud();
     if (hooks && hooks.onStage) hooks.onStage(ST.key);
-    if (hooks && chain && ST.key === "japan") {
-      // 対戦「日本→アジア」: そのままアジア大陸へ（順番は全員同じ）
-      const h = hooks, sd = seedBase;
-      later(() => newGame(mode, { stage: "asia", keep: true, hooks: h, seed: `${sd}:asia` }), 3400);
+    if (!finalGoal) {
+      // つぎのステージへ（対戦でも順番は全員同じ）
+      const h = hooks, sd = seedBase, to = chainTo;
+      later(() => newGame(mode, { stage: nextStage, lap, keep: true, hooks: h, seed: sd ? `${sd}:${nextStage}` : undefined, chainTo: to }), 3400);
       return;
     }
-    if (hooks) { later(() => endGame(true), 2800); return; }
-    if (ST.key === "japan") later(() => newGame(mode, { stage: "asia", lap, keep: true }), 3400);  // そのままアジア大陸へ
-    else later(() => endGame(true), 3200);                                                       // 全クリア
+    later(() => endGame(true), hooks ? 2800 : 3200);   // ゴール（ひとりなら世界まで完成で全クリア）
   }
 
 
@@ -573,11 +663,11 @@
 
     const reached = cleared.length ? cleared[cleared.length - 1] : "";
     lastResult = { mode, score, reached, laps: lap, stages: cleared.length };
-    const allClear = cleared.includes("アジア大陸");
-    ui.resultTitle.textContent = allClear ? (cleared.length > 1 ? "全クリア！" : "アジア大陸 完成！")
+    const allClear = cleared.includes("世界");
+    ui.resultTitle.textContent = allClear ? (cleared.length > 1 ? "全クリア！" : "世界 完成！")
       : cleared.length ? (timeUp ? "タイムアップ" : "ゲームオーバー")
       : timeUp ? "タイムアップ" : "ゲームオーバー";
-    const left = groups.length + (current ? 1 : 0) + queue.length;
+    const left = groups.length + (current ? 1 : 0) + queue.length + (held != null ? 1 : 0);
     ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared.length
       ? `${cleared.join(" → ")} まで完成`
       : `${ST.name}・のこり ${left} かたまり`);
@@ -663,6 +753,8 @@
     const nd = Math.min(window.devicePixelRatio || 1, 3);
     nextCanvas.width = 48 * nd;
     nextCanvas.height = 48 * nd;
+    $("holdCanvas").width = 36 * nd;
+    $("holdCanvas").height = 36 * nd;
     drawNext();
   }
 
@@ -1021,20 +1113,31 @@
     ctx.restore();
   }
 
-  function drawNext() {
-    const c = nctx;
+  function drawThumb(cv, id, alpha = 1) {
+    const c = cv.getContext("2d");
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
-    const id = queue[0];
-    ui.nextName.textContent = id ? ST.pieces[id].short : "—";
-    if (!id) return;
+    c.clearRect(0, 0, cv.width, cv.height);
+    if (id == null || !ST.pieces[id]) return;
     const { minX, minY, maxX, maxY } = ST.pieces[id].bbox;
-    const size = nextCanvas.width;
+    const size = cv.width;
     const k = (size * 0.84) / Math.max(maxX - minX, maxY - minY);
     c.translate(size / 2, size / 2);
     c.scale(k, k);
     c.translate(-(minX + maxX) / 2, -(minY + maxY) / 2);
-    drawGroupShapes(c, [id], { s: k / 1.4 }, false);
+    drawGroupShapes(c, [id], { s: k / 1.4 }, false, alpha);
+  }
+  function drawNext() {
+    const id = queue.length ? queue[0] : held;
+    ui.nextName.textContent = id != null && ST.pieces[id] ? ST.pieces[id].short : "—";
+    drawThumb(nextCanvas, id);
+    drawHold();
+  }
+  function drawHold() {
+    const hc = $("holdCanvas");
+    if (!hc) return;
+    drawThumb(hc, held, holdUsed ? 0.45 : 1);
+    $("holdBtn").classList.toggle("used", holdUsed);
+    $("holdBtn").classList.toggle("empty", held == null);
   }
 
   // ---------- effects ----------
@@ -1077,7 +1180,7 @@
 
   function updateHud() {
     ui.score.textContent = score;
-    ui.remain.textContent = queue.length + (current ? 1 : 0);
+    ui.remain.textContent = queue.length + (current ? 1 : 0) + (held != null ? 1 : 0);
     ui.shuffleBtn.disabled = !running || now < shuffleReadyAt;
     drawNext();
   }
@@ -1119,23 +1222,43 @@
     if (e.key === "ArrowRight") aimX = clampAim(aimX + 12);
     if (e.key === " " || e.key === "ArrowDown") { e.preventDefault(); drop(); }
     if (e.key === "s") doShuffle();
+    if (e.key === "h" || e.key === "c") doHold();
   });
 
   ui.shuffleBtn.addEventListener("click", doShuffle);
+  $("holdBtn").addEventListener("click", doHold);
   $("startBtn").addEventListener("click", () => newGame("normal"));
   $("startEasyBtn").addEventListener("click", () => newGame("easy"));
   // エクストラステージ: 日本列島を一度完成させると、タイトルから直接あそべる
+  function unlockedLevel() {
+    return Math.max(store.get("prefpack.unlocked", 0), store.get("prefpack.asiaUnlocked", false) ? 1 : 0);
+  }
+  let extraMode = "normal";
   function showAsiaUnlock() {
-    const on = !!store.get("prefpack.asiaUnlocked", false);
+    const lv = unlockedLevel();
+    document.querySelectorAll("#extraStages button[data-stage]").forEach((b) => {
+      const need = ORDER.indexOf(b.dataset.stage);
+      b.disabled = lv < need;
+      b.classList.toggle("locked", lv < need);
+    });
+    const on = lv >= 1;
     $("asiaBox").classList.toggle("locked", !on);
-    $("asiaNormalBtn").disabled = !on;
-    $("asiaEasyBtn").disabled = !on;
   }
   showAsiaUnlock();
-  $("asiaNormalBtn").addEventListener("click", () => newGame("normal", { stage: "asia" }));
-  $("asiaEasyBtn").addEventListener("click", () => newGame("easy", { stage: "asia" }));
+  $("extraModeSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-mode]");
+    if (!b) return;
+    extraMode = b.dataset.mode;
+    $("extraModeSeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  });
+  $("extraStages").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-stage]");
+    if (!b || b.disabled) return;
+    newGame(extraMode, { stage: b.dataset.stage });
+  });
   const toTitle = () => {
     gameId++;
+    $("fact").classList.remove("show");
     running = false; ended = true; engine = null; groups = []; current = null; hooks = null;
     ST = STAGES.japan; fx = []; particles = [];
     [ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
@@ -1150,6 +1273,9 @@
     document.body.classList.toggle("multi", !!hooks);
     ui.menu.classList.remove("hidden");
   });
+  const showFactsLabel = () => { $("factsBtn").textContent = `豆知識：${factsOn ? "ON" : "OFF"}`; };
+  showFactsLabel();
+  $("factsBtn").addEventListener("click", () => { factsOn = !factsOn; store.set("prefpack.facts", factsOn); showFactsLabel(); });
   $("resumeBtn").addEventListener("click", () => {
     paused = false;
     ui.menu.classList.add("hidden");
@@ -1236,7 +1362,13 @@
   }
   window.PrefGame = {
     // stage: "japan" | "asia" | "both"（日本→アジア）
-    start(m, seed, h, stage = "japan") { newGame(m, { seed, hooks: h, stage: stage === "asia" ? "asia" : "japan", chain: stage === "both" }); },
+    // stage: 単体 "japan"|"asia"|"europe"|"africa"|"world"、続けて "both"(日本→アジア) / "all"(日本→世界)
+    start(m, seed, h, stage = "japan") {
+      const first = stage === "both" || stage === "all" ? "japan" : stage;
+      const to = stage === "both" ? "asia" : stage === "all" ? "world" : stage;
+      newGame(m, { seed, hooks: h, stage: first, chainTo: to });
+    },
+    ORDER, STAGE_NAMES: Object.fromEntries(Object.entries(STAGES).map(([k, v]) => [k, v.name])),
     stop() { toTitle(); },
     leaveToTitle: () => toTitle(),
     snapshot,
@@ -1272,7 +1404,7 @@
       vibrate([30, 40, 30]);
     },
     get info() {
-      return { stage: ST.key, running, ended, score, mode, left: groups.length + (current ? 1 : 0) + queue.length, lineDown: now < lineDownUntil, cleared: !!completeAt };
+      return { stage: ST.key, running, ended, score, mode, left: groups.length + (current ? 1 : 0) + queue.length + (held != null ? 1 : 0), lineDown: now < lineDownUntil, cleared: !!completeAt };
     },
     toast,
     MODES,
@@ -1281,7 +1413,7 @@
   // debugging / tests
   window.__prefpack = {
     get state() { return { finalLeft: finalStart ? Math.round(finalLeft()) : null, timeUp, multi: !!hooks, mode, stage: ST.key, lap, score, parts: { ...parts }, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone], cleared: [...cleared], fx: fx.length, particles: particles.length }; },
-    newGame, drop, doShuffle, setAim: (x) => { aimX = clampAim(x); },
+    newGame, drop, doShuffle, doHold, get held() { return held; }, setAim: (x) => { aimX = clampAim(x); },
     fastForward(ms) { if (!engine) return; const n = Math.round(ms / STEP); for (let i = 0; i < n && !ended; i++) { now += STEP; update(STEP); } },
     skipCooldown() { canDropAt = 0; shuffleReadyAt = 0; if (!current) nextPiece(); },
     forceEnd(c) { endGame(!!c); },

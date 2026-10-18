@@ -107,7 +107,9 @@ for (const file of process.argv.slice(2)) {
   if (!m) throw new Error(`unexpected format: ${file}`);
   const data = JSON.parse(m[3]);
   let totalParts = 0;
-  for (const p of data.prefs) {
+  // world.js は { europe: {prefs}, africa: {prefs}, ... } の形
+  const sets = data.prefs ? [data] : Object.values(data);
+  for (const p of sets.flatMap((d) => d.prefs)) {
     const polys = p.polys || [p.poly];
     const hulls = [];
     for (const poly of polys) hulls.push(...decompose(poly, p.area, p.name));
@@ -117,6 +119,7 @@ for (const file of process.argv.slice(2)) {
     totalParts += hulls.length;
   }
   fs.writeFileSync(file, m[1] + JSON.stringify(data) + ";\n");
-  console.log(file, "pieces", data.prefs.length, "parts", totalParts,
-    "max/piece", Math.max(...data.prefs.map((p) => p.hulls.length)));
+  const all = sets.flatMap((d) => d.prefs);
+  console.log(file, "pieces", all.length, "parts", totalParts,
+    "max/piece", Math.max(...all.map((p) => p.hulls.length)));
 }

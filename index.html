@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261018-18">
+  <link rel="stylesheet" href="style.css?v=20261019-1">
 </head>
 <body>
   <div id="app">
@@ -44,10 +44,18 @@
       <canvas id="game"></canvas>
       <div class="toast" id="toast"></div>
       <div class="countdown hidden" id="countdown"></div>
+      <div class="fact" id="fact"></div>
+      <div class="stamp-bar hidden" id="stampBar"><button data-stamp="👍">👍</button><button data-stamp="😂">😂</button><button data-stamp="😱">😱</button><button data-stamp="🔥">🔥</button><button data-stamp="うわー">うわー</button><button data-stamp="ナイス！">ナイス！</button><button data-stamp="まだまだ！">まだまだ！</button></div>
+      <div class="my-stamp" id="myStamp"></div>
     </main>
 
     <footer class="controls">
       <button class="btn ghost" id="menuBtn" aria-label="メニュー">☰</button>
+      <button class="btn hold empty" id="holdBtn" aria-label="ホールド">
+        <canvas id="holdCanvas" width="72" height="72"></canvas>
+        <span>ホールド</span>
+      </button>
+      <button class="btn stamp-btn" id="stampBtn" aria-label="スタンプ">😀</button>
       <button class="btn shuffle" id="shuffleBtn">
         シャッフル
       </button>
@@ -66,9 +74,11 @@
             <li>線より上にあふれたら終わり</li>
             <li>最後のピースを落としたら<b>60秒以内</b>に完成させよう（アジアは90秒）</li>
             <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
-            <li>日本列島が完成したら、その日本からスタートして<b>アジア大陸</b>へ広げよう。アジア大陸まで完成させたら<b>全クリア</b>！スコアは合計されます</li>
+            <li>日本列島が完成したら、その日本からスタートして<b>アジア → ヨーロッパ → アフリカ → 世界</b>へ広げよう。世界まで完成させたら<b>全クリア</b>！スコアは合計されます</li>
+            <li>くっつくと、その県の<b>県庁所在地・名産</b>（国なら首都）が出る</li>
+            <li><b>ホールド</b>で今のピースを取っておける（1回落とすまでに1回）</li>
             <li>1ピースの持ち時間は 8 秒（かんたんは 12 秒）。過ぎるとその場で自動で落ちる</li>
-            <li><b>対戦</b>：同じ順番で県が出る。ステージは「日本」「アジア」「日本→アジア」から選べる。先に完成させた人の勝ち。地方をそろえると、相手のあふれ線が 10 秒下がる</li>
+            <li><b>対戦</b>：同じ順番で県が出る。ステージは日本〜世界、続けて遊ぶ「日本→アジア」「ぜんぶ」から選べる。先に完成させた人の勝ち。地方をそろえると、相手のあふれ線が 10 秒下がる</li>
           </ul>
         </details>
         <p class="section-label">ひとりで</p>
@@ -82,12 +92,18 @@
         </div>
         <p class="mode-note">かんたん：ピース少し小さめ・くっつく相手が光る</p>
         <div class="asia-box locked" id="asiaBox">
-          <p class="section-label">エクストラステージ <span class="asia-badge">アジア大陸</span></p>
-          <div class="modes">
-            <button class="btn vs mode-btn" id="asiaNormalBtn">ふつう</button>
-            <button class="btn vs ghosty mode-btn" id="asiaEasyBtn">かんたん</button>
+          <p class="section-label">エクストラステージ <span class="asia-badge">世界へ</span></p>
+          <div class="seg" id="extraModeSeg">
+            <button class="on" data-mode="normal">ふつう</button>
+            <button data-mode="easy">かんたん</button>
           </div>
-          <p class="mode-note lock-note">🔒 日本列島を一度完成させると、ここから直接あそべます</p>
+          <div class="extra-stages" id="extraStages">
+            <button class="btn vs" data-stage="asia">アジア</button>
+            <button class="btn vs" data-stage="europe">ヨーロッパ</button>
+            <button class="btn vs" data-stage="africa">アフリカ</button>
+            <button class="btn vs" data-stage="world">世界</button>
+          </div>
+          <p class="mode-note lock-note">🔒 日本列島を完成させると、つぎのステージから直接あそべます</p>
         </div>
         <button class="btn rank-open" id="rankOpenBtn">🏆 ランキング</button>
         <p class="section-label">みんなで対戦 <span class="net-badge">通信</span></p>
@@ -121,11 +137,13 @@
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
         </div>
-        <div class="seg seg3" id="mpStageSeg">
+        <div class="seg seg4" id="mpStageSeg">
           <button class="on" data-stage="japan">日本</button>
           <button data-stage="asia">アジア</button>
-          <button data-stage="both">日本→アジア</button>
+          <button data-stage="both">日本→<br>アジア</button>
+          <button data-stage="all">ぜんぶ</button>
         </div>
+        <p class="mode-note">ヨーロッパ・アフリカ・世界は、待合室でステージをタップして選べます</p>
         <button class="btn primary" id="mpCreateGo">作る</button>
         <button class="btn" data-back>もどる</button>
         <p class="mp-msg" id="mpCreateMsg"></p>
@@ -171,6 +189,7 @@
         <h2 id="mpResultTitle">結果</h2>
         <p class="result-sub" id="mpResultSub"></p>
         <ol class="ranking" id="mpRanking"></ol>
+        <div class="stamp-row"><button data-stamp="👍">👍</button><button data-stamp="😂">😂</button><button data-stamp="😱">😱</button><button data-stamp="🔥">🔥</button><button data-stamp="うわー">うわー</button><button data-stamp="ナイス！">ナイス！</button><button data-stamp="まだまだ！">まだまだ！</button></div>
         <button class="btn primary" id="mpAgain">もう一回（この部屋で）</button>
         <p class="mp-msg" id="mpResultMsg"></p>
         <button class="btn" id="mpLeave2">部屋を出る</button>
@@ -182,6 +201,7 @@
       <div class="card">
         <h2>ひとやすみ</h2>
         <button class="btn primary" id="resumeBtn">つづける</button>
+        <button class="btn" id="factsBtn">豆知識：ON</button>
         <button class="btn solo-only" id="restartBtn">はじめから</button>
         <button class="btn solo-only" id="titleBtn">モードをえらびなおす</button>
         <button class="btn multi-only" id="mpLeave3">対戦をぬける</button>
@@ -211,11 +231,14 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261018-18"></script>
-  <script src="js/prefs.js?v=20261018-18"></script>
-  <script src="js/asia.js?v=20261018-18"></script>
-  <script src="js/game.js?v=20261018-18"></script>
-  <script src="lib/qrcode.min.js?v=20261018-18"></script>
-  <script src="js/net.js?v=20261018-18"></script>
+  <script src="vendor/matter.min.js?v=20261019-1"></script>
+  <script src="js/prefs.js?v=20261019-1"></script>
+  <script src="js/asia.js?v=20261019-1"></script>
+  <script src="js/world.js?v=20261019-1"></script>
+  <script src="js/capitals.js?v=20261019-1"></script>
+  <script src="js/facts.js?v=20261019-1"></script>
+  <script src="js/game.js?v=20261019-1"></script>
+  <script src="lib/qrcode.min.js?v=20261019-1"></script>
+  <script src="js/net.js?v=20261019-1"></script>
 </body>
 </html>

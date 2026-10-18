@@ -23,8 +23,10 @@
   const LIVE_EVERY = 1000;
   const ROOM_TTL = 24 * 60 * 60 * 1000;
   const REGIONS = window.PREF_DATA.regions;
-  const STAGE_NAMES = { japan: "日本", asia: "アジア", both: "日本→アジア" };
-  const STAGE_ORDER = ["japan", "asia", "both"];
+  const STAGE_NAMES = { japan: "日本", asia: "アジア", europe: "ヨーロッパ", africa: "アフリカ", world: "世界", both: "日本→アジア", all: "ぜんぶ（日本→世界）" };
+  const STAGE_ORDER = ["japan", "asia", "europe", "africa", "world", "both", "all"];
+  const firstStage = (st) => (st === "both" || st === "all" ? "japan" : st || "japan");
+  const isChain = (st) => st === "both" || st === "all";
 
   const $ = (id) => document.getElementById(id);
   const G = () => window.PrefGame;
@@ -361,8 +363,8 @@
         up[`players/${id}/round`] = round;
         up[`players/${id}/status`] = "playing";
         up[`players/${id}/score`] = 0;
-        up[`players/${id}/left`] = (R.stage || "japan") === "asia" ? 46 : 47;
-        up[`players/${id}/stage`] = (R.stage || "japan") === "asia" ? "asia" : "japan";
+        up[`players/${id}/left`] = null;
+        up[`players/${id}/stage`] = firstStage(R.stage);
         up[`players/${id}/board`] = null;
         up[`players/${id}/lineDown`] = false;
         up[`players/${id}/finishAt`] = null;
@@ -380,6 +382,8 @@
     finished = false;
     seenEv = new Set(Object.keys(R.ev || {}));
     hideAll();
+    document.body.classList.add("in-match");
+    $("stampBar").classList.add("hidden");
     $("rivals").innerHTML = "";
     $("rivals").classList.remove("hidden");
     renderRivals();
@@ -451,13 +455,50 @@
     for (const [id, e] of Object.entries(ev)) {
       if (seenEv.has(id)) continue;
       seenEv.add(id);
-      if (!e || e.from === PID || e.round !== myRound || finished) continue;
+      if (!e || e.from === PID || e.round !== myRound) continue;
+      if (e.type === "stamp") { showStamp(e); continue; }
+      if (finished) continue;
       G().attack(ATTACK_MS, e.name);
       G().toast(`${e.name}さんが${e.rname || REGIONS[e.region] || ""}をそろえた！ 線が下がる！`, false);
       const card = $("rivals").querySelector(`[data-id="${CSS.escape(e.from)}"]`);
       if (card) { card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 1500); }
     }
   }
+
+  // ---------- スタンプ ----------
+  let lastStampAt = 0;
+  function sendStamp(stamp) {
+    if (!code || myRound < 0) return;
+    const t = Date.now();
+    if (t - lastStampAt < 1200) return;   // 連打しすぎない
+    lastStampAt = t;
+    const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    NET.set(`${KEY(code)}/ev/${id}`, { type: "stamp", from: PID, name: myName() || "だれか", stamp: String(stamp).slice(0, 8), round: myRound, t: NET.now() }).catch(() => {});
+    const me = $("myStamp");
+    me.textContent = stamp;
+    me.classList.add("show");
+    clearTimeout(me._t);
+    me._t = setTimeout(() => me.classList.remove("show"), 1400);
+    $("stampBar").classList.add("hidden");
+  }
+  function showStamp(e) {
+    const card = $("rivals").querySelector(`[data-id="${CSS.escape(e.from)}"]`);
+    if (card && !$("rivals").classList.contains("hidden") && !isOpen("mpResult")) {
+      card.querySelectorAll(".bubble").forEach((b) => b.remove());
+      const b = document.createElement("div");
+      b.className = "bubble";
+      b.textContent = e.stamp;
+      card.appendChild(b);
+      setTimeout(() => b.remove(), 2300);
+    } else {
+      G().toast(`${e.name}：${e.stamp}`);
+    }
+  }
+  $("stampBtn").addEventListener("click", () => $("stampBar").classList.toggle("hidden"));
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-stamp]");
+    if (b) sendStamp(b.dataset.stamp);
+  });
 
   // 最下位が確定したら GAME OVER（完成した人は完成していない人より必ず上なので、
   // 自分以外がみんな完成したら、もう順位は上がらない）
@@ -486,7 +527,8 @@
     if (p.status === "clear") return "完成！";
     if (p.status === "win") return "1位確定";
     if (p.status === "over") return "ゲームオーバー";
-    return `${p.stage === "asia" && (R.stage || "japan") === "both" ? "アジア・" : ""}のこり${p.left == null ? 47 : p.left}`;
+    const sn = isChain(R.stage) && p.stage ? `${STAGE_NAMES[p.stage] || ""}・` : "";
+    return p.left == null ? `${sn}スタート` : `${sn}のこり${p.left}`;
   }
 
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -500,7 +542,7 @@
   function drawBoardFor(cv, p) {
     let snap = [];
     try { snap = p.board ? JSON.parse(p.board) : []; } catch { /* ignore */ }
-    G().drawBoard(cv, snap, { mode: R.mode, lineDown: !!p.lineDown, stage: p.stage || (R.stage === "asia" ? "asia" : "japan") });
+    G().drawBoard(cv, snap, { mode: R.mode, lineDown: !!p.lineDown, stage: p.stage || firstStage(R.stage) });
   }
 
   function renderRivals() {
@@ -583,6 +625,8 @@
     clearInterval(countdownTimer);
     $("countdown").classList.add("hidden");
     $("rivals").classList.add("hidden");
+    document.body.classList.remove("in-match");
+    $("stampBar").classList.add("hidden");
     myRound = -1;
     finished = false;
     if (G().info.running || G().info.ended) G().stop();

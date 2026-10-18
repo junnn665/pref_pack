@@ -443,7 +443,83 @@ body.multi .solo-only { display: none; }
 .asia-badge { display: inline-block; margin-left: 4px; padding: 1px 8px; font-size: 10px; border-radius: 999px; background: #3b6fd8; color: #fff; letter-spacing: .05em; vertical-align: 1px; }
 .asia-box .lock-note { display: none; }
 .asia-box.locked .lock-note { display: block; }
-.asia-box.locked .btn { opacity: .4; }
 .seg.seg3 { grid-template-columns: 1fr 1fr 1.3fr; }
 .seg.seg3 button { padding: 10px 4px; font-size: 14px; }
 .lobby-mode + .lobby-mode { margin-top: -6px; }
+
+/* hold */
+.btn.hold {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0; padding: 4px 10px; width: 76px; font-size: 11px; color: var(--ink-soft);
+}
+.btn.hold canvas { width: 36px; height: 36px; }
+.btn.hold.empty canvas { opacity: .25; background: repeating-linear-gradient(45deg, #efe5d3 0 4px, transparent 4px 8px); border-radius: 6px; }
+.btn.hold.used { opacity: .7; }
+.extra-stages { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.extra-stages .btn { font-size: 15px; padding: 11px 6px; }
+.extra-stages .btn.locked { opacity: .35; }
+.extra-stages .btn.locked::before { content: "🔒 "; }
+.asia-box.locked .btn { opacity: 1; }
+
+/* trivia */
+.fact {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translate(-50%, 12px);
+  max-width: 92%;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  background: rgba(255, 250, 241, .96);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(59, 50, 38, .18);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+}
+.fact.show { opacity: 1; transform: translate(-50%, 0); }
+.fact b { padding: 3px 9px; border-radius: 999px; color: #3b3226; white-space: nowrap; }
+.fact span { line-height: 1.35; }
+.seg.seg4 { grid-template-columns: repeat(4, 1fr); }
+.seg.seg4 button { padding: 8px 2px; font-size: 13px; line-height: 1.2; }
+
+/* stamps (multiplayer) */
+.btn.stamp-btn { display: none; width: 56px; padding: 12px 0; font-size: 22px; }
+body.in-match .btn.stamp-btn { display: block; }
+.stamp-bar {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+  width: 94%; padding: 8px; background: rgba(255,250,241,.97); border-radius: 18px;
+  box-shadow: 0 8px 20px rgba(59,50,38,.2); z-index: 6;
+}
+.stamp-bar.hidden { display: none; }
+.stamp-bar button, .stamp-row button {
+  font: inherit; font-weight: 800; font-size: 15px; border: 0; border-radius: 999px;
+  background: #f6efe2; padding: 8px 12px; color: var(--ink); cursor: pointer;
+}
+.stamp-bar button:active, .stamp-row button:active { transform: scale(.94); }
+.stamp-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.my-stamp {
+  position: absolute; right: 10px; bottom: 70px; font-size: 26px; font-weight: 800;
+  background: #fff; padding: 6px 14px; border-radius: 18px; box-shadow: 0 4px 12px rgba(59,50,38,.2);
+  opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .2s, transform .2s; z-index: 6;
+}
+.my-stamp.show { opacity: 1; transform: translateY(0); }
+.rival { position: relative; }
+.rival .bubble {
+  position: absolute; left: 50%; top: -6px; transform: translate(-50%, -100%);
+  background: #fff; border-radius: 14px; padding: 4px 10px; font-size: 18px; font-weight: 800; white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(59,50,38,.2); animation: bubble 2.2s ease-out forwards; z-index: 3;
+}
+.rival .bubble::after {
+  content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -6px;
+  border: 6px solid transparent; border-top-color: #fff; border-bottom: 0;
+}
+.rivals { padding-top: 34px; margin-top: -30px; }
+@keyframes bubble { 0% { opacity: 0; transform: translate(-50%, -80%) scale(.6); } 12% { opacity: 1; transform: translate(-50%, -100%) scale(1.08); } 20% { transform: translate(-50%, -100%) scale(1); } 85% { opacity: 1; } 100% { opacity: 0; } }
