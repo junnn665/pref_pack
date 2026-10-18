@@ -1,5 +1,7 @@
 # 都道府県ゲーム
 
+中濱Games
+
 都道府県を箱に落として詰めるパズルゲーム。
 地図で隣り合う県同士がふれるとくっついて地方になり、47 都道府県ぜんぶつなぐと日本列島が完成します。
 
@@ -24,6 +26,22 @@
 
 ベストスコアはモードごとに記録されます。
 
+## みんなで対戦（通信）
+
+1. ひとりが「部屋を作る」→ 4ケタの部屋番号・招待リンク・QR が出る
+2. ほかの人は「番号で参加」か、リンク／QR から参加
+3. ホストが「スタート」→ 3・2・1 で全員いっせいに開始（県の出る順番は全員同じ）
+
+- 上の段に相手の箱がリアルタイムで小さく表示される
+- 地方をそろえると、相手のあふれ線が 10 秒間下がる（おじゃま）
+- 先に日本列島を完成させた人が勝ち。だれも完成しなければスコアが高い順
+- 結果画面でホストが「もう一回」を押すと、同じ部屋で次の対戦
+- 途中で入った人は次の回から参加。ホストが抜けると、次に早く入った人がホストになる
+
+通信は「おでこでお題当て」と同じ Firebase Realtime Database（`odeko-ddb38`）を使っています。
+データは `rooms/pref-<部屋番号>` に入るので、お題当ての部屋（`rooms/<番号>`）とはぶつかりません。
+作ってから 24 時間たった対戦部屋は、次に部屋を作ったときに自動で消えます。
+
 ## 公開のしかた（GitHub Pages）
 
 1. リポジトリの **Settings → Pages** を開く
@@ -45,6 +63,8 @@ python3 -m http.server 8000
 | --- | --- |
 | `index.html` / `style.css` | 画面とデザイン |
 | `js/game.js` | ゲーム本体（物理・合体判定・描画） |
+| `js/net.js` | みんなで対戦（部屋・参加・おじゃま・順位） |
+| `lib/qrcode.min.js` | 招待 QR（qrcode-generator, MIT） |
 | `js/prefs.js` | 都道府県の形・隣接データ（自動生成） |
 | `vendor/matter.min.js` | 物理エンジン [Matter.js](https://brm.io/matter-js/)（MIT） |
 | `tools/build_prefs.py` | 地図データから `js/prefs.js` を作るスクリプト |
@@ -67,6 +87,7 @@ python3 tools/build_prefs.py japan.geojson js/prefs.js
 
 - 地図データ: 「国土数値情報（行政区域データ）」（国土交通省）を加工して作成（[dataofjapan/land](https://github.com/dataofjapan/land) 経由）
 - 物理エンジン: Matter.js © Liam Brummitt（MIT License）
+- QR コード: qrcode-generator © Kazuhiko Arase（MIT License）
 
 ### 更新するとき
 

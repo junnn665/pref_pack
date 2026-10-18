@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261018-4">
+  <link rel="stylesheet" href="style.css?v=20261018-6">
 </head>
 <body>
   <div id="app">
@@ -37,9 +37,13 @@
       </div>
     </header>
 
+    <!-- 対戦相手の箱（対戦中のみ表示） -->
+    <div class="rivals hidden" id="rivals"></div>
+
     <main class="stage" id="stage">
       <canvas id="game"></canvas>
       <div class="toast" id="toast"></div>
+      <div class="countdown hidden" id="countdown"></div>
     </main>
 
     <footer class="controls">
@@ -52,14 +56,19 @@
     <!-- start -->
     <section class="overlay" id="startScreen">
       <div class="card">
-        <h1 class="title">つなげて日本列島！<br><span>都道府県ゲーム</span></h1>
-        <ul class="rules">
-          <li><b>タップ／ドラッグ</b>で位置を決めて、はなすと落ちる</li>
-          <li>地図で<b>隣り合う県</b>がふれると、くっつく</li>
-          <li>地方がそろうとボーナス。<b>シャッフル</b>は何回でもOK</li>
-          <li>線より上にあふれたら終わり</li>
-          <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
-        </ul>
+        <h1 class="title">つなげて日本列島！<br><span>都道府県ゲーム</span><small class="brand">中濱Games</small></h1>
+        <details class="howto">
+          <summary>あそびかた</summary>
+          <ul class="rules">
+            <li><b>タップ／ドラッグ</b>で位置を決めて、はなすと落ちる</li>
+            <li>地図で<b>隣り合う県</b>がふれると、くっつく</li>
+            <li>地方がそろうとボーナス。<b>シャッフル</b>は何回でもOK</li>
+            <li>線より上にあふれたら終わり</li>
+            <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
+            <li><b>対戦</b>：同じ順番で県が出る。先に日本列島を作った人の勝ち。地方をそろえると、相手のあふれ線が 10 秒下がる</li>
+          </ul>
+        </details>
+        <p class="section-label">ひとりで</p>
         <div class="modes">
           <button class="btn primary mode-btn" id="startBtn">
             ふつう<small>ベスト <span id="bestNormal">0</span></small>
@@ -69,6 +78,70 @@
           </button>
         </div>
         <p class="mode-note">かんたん：ピースが小さめ・おとなりの県が出やすい・くっつく相手が光る</p>
+        <p class="section-label">みんなで対戦 <span class="net-badge">通信</span></p>
+        <div class="modes">
+          <button class="btn vs" id="mpCreateBtn">部屋を作る</button>
+          <button class="btn vs ghosty" id="mpJoinBtn">番号で参加</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 対戦: 部屋を作る -->
+    <section class="overlay hidden" id="mpCreate">
+      <div class="card">
+        <h2>部屋を作る</h2>
+        <label class="field">なまえ<input id="mpNameC" maxlength="10" autocomplete="nickname" placeholder="例：じゅん"></label>
+        <div class="seg" id="mpModeSeg">
+          <button class="on" data-mode="normal">ふつう</button>
+          <button data-mode="easy">かんたん</button>
+        </div>
+        <button class="btn primary" id="mpCreateGo">作る</button>
+        <button class="btn" data-back>もどる</button>
+        <p class="mp-msg" id="mpCreateMsg"></p>
+      </div>
+    </section>
+
+    <!-- 対戦: 番号で参加 -->
+    <section class="overlay hidden" id="mpJoin">
+      <div class="card">
+        <h2>番号で参加</h2>
+        <label class="field">部屋番号<input id="mpCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4ケタ"></label>
+        <label class="field">なまえ<input id="mpNameJ" maxlength="10" autocomplete="nickname" placeholder="例：じゅん"></label>
+        <button class="btn primary" id="mpJoinGo">参加する</button>
+        <button class="btn" data-back>もどる</button>
+        <p class="mp-msg" id="mpJoinMsg"></p>
+      </div>
+    </section>
+
+    <!-- 対戦: 待合室 -->
+    <section class="overlay hidden" id="mpLobby">
+      <div class="card">
+        <p class="section-label">部屋番号</p>
+        <div class="tiles" id="mpTiles"></div>
+        <div class="invite">
+          <div class="qr" id="mpQr"></div>
+          <div class="invite-side">
+            <p>みんなに番号を伝えるか、<br>カメラでQRを読んでもらおう</p>
+            <button class="btn small" id="mpShare">招待リンクを送る</button>
+          </div>
+        </div>
+        <p class="lobby-mode" id="mpLobbyMode"></p>
+        <ul class="players" id="mpPlayers"></ul>
+        <button class="btn primary" id="mpStart">スタート</button>
+        <p class="mp-msg" id="mpLobbyMsg"></p>
+        <button class="btn" id="mpLeave">部屋を出る</button>
+      </div>
+    </section>
+
+    <!-- 対戦: 結果 -->
+    <section class="overlay hidden" id="mpResult">
+      <div class="card">
+        <h2 id="mpResultTitle">結果</h2>
+        <p class="result-sub" id="mpResultSub"></p>
+        <ol class="ranking" id="mpRanking"></ol>
+        <button class="btn primary" id="mpAgain">もう一回（この部屋で）</button>
+        <p class="mp-msg" id="mpResultMsg"></p>
+        <button class="btn" id="mpLeave2">部屋を出る</button>
       </div>
     </section>
 
@@ -77,8 +150,9 @@
       <div class="card">
         <h2>ひとやすみ</h2>
         <button class="btn primary" id="resumeBtn">つづける</button>
-        <button class="btn" id="restartBtn">はじめから</button>
-        <button class="btn" id="titleBtn">モードをえらびなおす</button>
+        <button class="btn solo-only" id="restartBtn">はじめから</button>
+        <button class="btn solo-only" id="titleBtn">モードをえらびなおす</button>
+        <button class="btn multi-only" id="mpLeave3">対戦をぬける</button>
       </div>
     </section>
 
@@ -95,8 +169,10 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261018-4"></script>
-  <script src="js/prefs.js?v=20261018-4"></script>
-  <script src="js/game.js?v=20261018-4"></script>
+  <script src="vendor/matter.min.js?v=20261018-6"></script>
+  <script src="js/prefs.js?v=20261018-6"></script>
+  <script src="js/game.js?v=20261018-6"></script>
+  <script src="lib/qrcode.min.js?v=20261018-6"></script>
+  <script src="js/net.js?v=20261018-6"></script>
 </body>
 </html>

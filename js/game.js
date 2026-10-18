@@ -111,6 +111,20 @@
   let particles = [];
   let now = 0;
   let completeAt = 0;
+  let rand = Math.random;    // seeded in multiplayer so everyone gets the same order
+  let hooks = null;          // multiplayer callbacks (null = solo)
+  let lineDownUntil = 0;     // attack: overflow line lowered until this game time
+  let lineDownFrom = "";
+  const LINE_DROP = 70;
+  const curLine = () => LINE_Y + (now < lineDownUntil ? LINE_DROP : 0);
+
+  // seeded random (mulberry32)
+  function seeded(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+    let a = h >>> 0;
+    return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
 
   showBest();
   function showBest() { ui.bestNormal.textContent = best.normal; ui.bestEasy.textContent = best.easy; }
@@ -185,24 +199,27 @@
   // ---------- game flow ----------
   function shuffleArray(a) {
     for (let i = a.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
+      const j = (rand() * (i + 1)) | 0;
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
   }
 
-  function newGame(m) {
+  function newGame(m, opts = {}) {
     if (m) mode = m;
+    rand = opts.seed ? seeded(String(opts.seed)) : Math.random;
+    hooks = opts.hooks || null;
+    lineDownUntil = 0;
     const M = MODES[mode];
     EXP = M.exp; LINE_Y = M.lineY; OVER_LIMIT = M.overLimit;
     engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
     engine.gravity.y = 1;
     world = engine.world;
-    const opts = { isStatic: true, friction: 0.5, restitution: 0.05 };
+    const wallOpts = { isStatic: true, friction: 0.5, restitution: 0.05 };
     Composite.add(world, [
-      Bodies.rectangle(W / 2, FLOOR + 50, W + 200, 100, opts),
-      Bodies.rectangle(BOX_L - 50, H / 2 - 200, 100, H + 400, opts),
-      Bodies.rectangle(BOX_R + 50, H / 2 - 200, 100, H + 400, opts),
+      Bodies.rectangle(W / 2, FLOOR + 50, W + 200, 100, wallOpts),
+      Bodies.rectangle(BOX_L - 50, H / 2 - 200, 100, H + 400, wallOpts),
+      Bodies.rectangle(BOX_R + 50, H / 2 - 200, 100, H + 400, wallOpts),
     ]);
     Events.on(engine, "collisionStart", onCollide);
     Events.on(engine, "collisionActive", onCollide);
@@ -238,13 +255,13 @@
 
   // かんたんモード: 次の県を、箱の中か今の県のおとなりから選びやすくする
   function arrangeNeighborNext() {
-    if (queue.length < 2 || Math.random() > 0.8) return;
+    if (queue.length < 2 || rand() > 0.8) return;
     const placed = new Set(current ? [current.id] : []);
     for (const g of groups) for (const id of g.members) placed.add(id);
     const cands = [];
     queue.forEach((id, i) => { for (const p of placed) if (PREFS[id].adjSet.has(p)) { cands.push(i); break; } });
     if (!cands.length) return;
-    const i = cands[(Math.random() * cands.length) | 0];
+    const i = cands[(rand() * cands.length) | 0];
     const [id] = queue.splice(i, 1);
     queue.unshift(id);
   }
@@ -344,7 +361,8 @@
       if (ids.every((id) => g.members.has(id))) {
         regionsDone.add(ri);
         score += 300;
-        toast(`${DATA.regions[ri]}地方 そろった！ +300`, true);
+        toast(`${DATA.regions[ri]}地方 そろった！ +300` + (hooks ? "（おじゃま発動！）" : ""), true);
+        if (hooks && hooks.onRegion) hooks.onRegion(ri);
       }
     });
   }
@@ -381,6 +399,7 @@
     running = false;
     if (score > best[mode]) { best[mode] = score; store.set(`prefpack.best.${mode}`, score); }
     showBest();
+    if (hooks) { if (hooks.onEnd) hooks.onEnd(cleared, score); return; }
     ui.resultTitle.textContent = cleared ? "日本列島 完成！" : "ゲームオーバー";
     const left = groups.length + (current ? 1 : 0) + queue.length;
     ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared
@@ -409,7 +428,7 @@
     for (const g of groups) {
       if (now - g.droppedAt < 1500) continue;
       const sp = Math.hypot(g.body.velocity.x, g.body.velocity.y);
-      if (g.body.bounds.min.y < LINE_Y && sp < 1.5) { danger = true; break; }
+      if (g.body.bounds.min.y < curLine() && sp < 1.5) { danger = true; break; }
     }
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
     if (overTimer > OVER_LIMIT && !completeAt) endGame(false);
@@ -470,10 +489,23 @@
     const pulse = d > 0 ? 0.5 + 0.5 * Math.sin(now / 90) : 0;
     ctx.strokeStyle = d > 0 ? `rgba(232,93,74,${0.55 + 0.45 * pulse})` : "rgba(156,122,69,.45)";
     ctx.beginPath();
-    ctx.moveTo(BOX_L, LINE_Y);
-    ctx.lineTo(BOX_R, LINE_Y);
+    const ly = curLine();
+    ctx.moveTo(BOX_L, ly);
+    ctx.lineTo(BOX_R, ly);
     ctx.stroke();
     ctx.restore();
+    if (now < lineDownUntil) {
+      const sec = Math.ceil((lineDownUntil - now) / 1000);
+      ctx.save();
+      ctx.fillStyle = "rgba(232,93,74,.08)";
+      ctx.fillRect(BOX_L, LINE_Y, BOX_R - BOX_L, LINE_DROP);
+      ctx.font = '800 13px "M PLUS Rounded 1c", sans-serif';
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = "#c2402f";
+      ctx.fillText(`おじゃま中 ${sec}`, BOX_R - 8, ly - 4);
+      ctx.restore();
+    }
   }
 
   function drawGroupShapes(c, members, geom, gold, alpha = 1) {
@@ -716,7 +748,7 @@
     newGame("easy");
   });
   const toTitle = () => {
-    running = false; ended = true; engine = null; groups = []; current = null;
+    running = false; ended = true; engine = null; groups = []; current = null; hooks = null;
     ui.menu.classList.add("hidden");
     ui.result.classList.add("hidden");
     ui.start.classList.remove("hidden");
@@ -726,7 +758,8 @@
   $("resultTitleBtn").addEventListener("click", toTitle);
   $("menuBtn").addEventListener("click", () => {
     if (!running) return;
-    paused = true;
+    if (!hooks) paused = true;   // 対戦中は止めない
+    document.body.classList.toggle("multi", !!hooks);
     ui.menu.classList.remove("hidden");
   });
   $("resumeBtn").addEventListener("click", () => {
@@ -742,7 +775,7 @@
     newGame();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && running && !ended) { paused = true; ui.menu.classList.remove("hidden"); }
+    if (document.hidden && running && !ended && !hooks) { paused = true; ui.menu.classList.remove("hidden"); }
   });
 
   // ---------- loop ----------
@@ -782,12 +815,65 @@
   resize();
   requestAnimationFrame(frame);
 
+  // ---------- public API (used by net.js for 対戦) ----------
+  function snapshot() {
+    const r = (v) => Math.round(v * 10) / 10;
+    return groups.map((g) => [[...g.members], r(g.body.position.x), r(g.body.position.y), Math.round(g.body.angle * 100) / 100, r(g.local.x), r(g.local.y)]);
+  }
+  // draw someone's box (from snapshot) into a small canvas
+  function drawBoard(cv, snap, opts = {}) {
+    const c = cv.getContext("2d");
+    const k = cv.width / W;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, cv.width, cv.height);
+    c.setTransform(k, 0, 0, k, 0, 0);
+    c.fillStyle = "#fffaf1"; c.fillRect(BOX_L, 0, BOX_R - BOX_L, FLOOR);
+    c.fillStyle = "#c9a46b"; c.fillRect(0, 0, WALL, H); c.fillRect(W - WALL, 0, WALL, H); c.fillRect(0, FLOOR, W, WALL);
+    c.strokeStyle = opts.lineDown ? "#e85d4a" : "rgba(156,122,69,.6)";
+    c.lineWidth = 4; c.setLineDash([14, 10]);
+    const ly = (MODES[opts.mode || "normal"] || MODES.normal).lineY + (opts.lineDown ? LINE_DROP : 0);
+    c.beginPath(); c.moveTo(BOX_L, ly); c.lineTo(BOX_R, ly); c.stroke(); c.setLineDash([]);
+    const exp0 = EXP; EXP = (MODES[opts.mode || "normal"] || MODES.normal).exp;
+    for (const [members, x, y, a, lx, ly2] of snap || []) {
+      const geom = makeGroupGeom(members);
+      c.save();
+      c.translate(x, y); c.rotate(a); c.translate(-lx, -ly2);
+      c.scale(geom.s, geom.s); c.translate(-geom.ox, -geom.oy);
+      drawGroupShapes(c, members, geom, members.length === ALL_IDS.length);
+      c.restore();
+    }
+    EXP = exp0;
+  }
+  window.PrefGame = {
+    start(m, seed, h) {
+      ui.start.classList.add("hidden"); ui.menu.classList.add("hidden"); ui.result.classList.add("hidden");
+      newGame(m, { seed, hooks: h });
+    },
+    stop() { toTitle(); },
+    leaveToTitle: () => toTitle(),
+    snapshot,
+    drawBoard,
+    attack(ms, from) {
+      if (!running || ended) return;
+      lineDownUntil = Math.max(lineDownUntil, now) + ms;
+      lineDownFrom = from;
+      shake = 10;
+      vibrate([30, 40, 30]);
+    },
+    get info() {
+      return { running, ended, score, mode, left: groups.length + (current ? 1 : 0) + queue.length, lineDown: now < lineDownUntil, cleared: !!completeAt };
+    },
+    toast,
+    MODES,
+  };
+
   // expose for debugging / tests
   window.__prefpack = {
-    get state() { return { mode, score, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone] }; },
+    get state() { return { multi: !!hooks, mode, score, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone] }; },
     newGame, drop, doShuffle, setAim: (x) => { aimX = clampAim(x); },
-    fastForward(ms) { const n = Math.round(ms / STEP); for (let i = 0; i < n && !ended; i++) { now += STEP; update(STEP); } },
+    fastForward(ms) { if (!engine) return; const n = Math.round(ms / STEP); for (let i = 0; i < n && !ended; i++) { now += STEP; update(STEP); } },
     skipCooldown() { canDropAt = 0; shuffleReadyAt = 0; if (!current) nextPiece(); },
+    forceEnd(c) { endGame(!!c); },
     S_TOTAL, scaleFor, TOTAL_AREA,
   };
 })();
