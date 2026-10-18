@@ -254,6 +254,7 @@
       if (myRound !== v.round) startRound();
       handleEvents();
       checkLastPlace();
+      checkWinner();
       renderRivals();
       if (finished) renderResult();
     } else {
@@ -421,10 +422,12 @@
       NET.set(`${KEY(code)}/ev/${id}`, { from: PID, name: myName() || "だれか", type: "line", region: ri, rname: rname || "", round: myRound, t: NET.now() }).catch(() => {});
     },
     onStage() { pushLive(); },
-    onEnd(cleared) {
+    // 自分が完成させた時点で、ほかにまだ完成した人がいなければ1位
+    amFirst() { return !participants().some((p) => p.id !== PID && p.status === "clear"); },
+    onEnd(cleared, _score, extra) {
       finished = true;
       clearInterval(liveTimer);
-      pushLive(cleared ? "clear" : "over");
+      pushLive(cleared ? "clear" : extra && extra.winner ? "win" : "over");
       setTimeout(() => { if (finished && code) { renderResult(); show("mpResult"); } }, cleared ? 0 : 700);
     },
   };
@@ -467,9 +470,21 @@
     }
   }
 
+  // 1位が確定したら WINNER（ほかの全員がゲームオーバー／通信切れで、自分の点数が全員より上。
+  // 点数は減らないので、もう抜かれない）
+  function checkWinner() {
+    if (finished || myRound < 0 || !G().info.running) return;
+    const others = participants().filter((p) => p.id !== PID);
+    if (!others.length) return;
+    if (!others.every((p) => p.status === "over" || (p.online === false && p.status !== "clear"))) return;
+    const best = Math.max(...others.map((p) => p.score || 0));
+    if (G().info.score > best) G().winner(others.length === 1 ? `${others[0].name}さんがゲームオーバー` : "ほかのみんながゲームオーバー");
+  }
+
   function statusText(p) {
     if (p.online === false && p.status === "playing") return "通信切れ";
     if (p.status === "clear") return "完成！";
+    if (p.status === "win") return "1位確定";
     if (p.status === "over") return "ゲームオーバー";
     return `${p.stage === "asia" && (R.stage || "japan") === "both" ? "アジア・" : ""}のこり${p.left == null ? 47 : p.left}`;
   }
@@ -530,7 +545,7 @@
   function renderResult() {
     if (!R) return;
     const list = ranked();
-    const done = (p) => p.status === "clear" || p.status === "over" || p.online === false;
+    const done = (p) => p.status === "clear" || p.status === "over" || p.status === "win" || p.online === false;
     const allDone = list.every(done);
     const myRank = list.findIndex((p) => p.id === PID) + 1;
     const mine = list.find((p) => p.id === PID) || {};

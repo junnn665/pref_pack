@@ -163,7 +163,8 @@
   let now = 0;
   let completeAt = 0;
   let pieceShownAt = 0;
-  let locked = false;        // 対戦で最下位確定 → 操作できない      // いまのピースが出た時刻（落とすまでの持ち時間）
+  let locked = false;
+  let wonEarly = false;      // 対戦: 完成前に1位が確定した        // 対戦で最下位確定 → 操作できない      // いまのピースが出た時刻（落とすまでの持ち時間）
   let chain = false;         // 対戦「日本→アジア」: 日本列島のあとアジア大陸へ続ける
   let seedBase = null;
   let finalStart = 0;        // 最後のピースを落とした時刻（ここから制限時間スタート）
@@ -275,6 +276,7 @@
     hooks = opts.hooks || null;
     lineDownUntil = 0;
     locked = false;
+    wonEarly = false;
 
     engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
     engine.gravity.y = 1;
@@ -521,7 +523,11 @@
     g.glowColor = "#f7d35c";
     fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
     fx.push({ type: "rays", t0: now, dur: 3200, group: g });
-    fx.push({ type: "banner", t0: now + 250, dur: 2700, text: `${ST.finalName} 完成！`, sub: `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`, color: "#e8a019", big: true });
+    // 対戦で、最終ゴールを一番に完成させたら WINNER
+    const finalGoal = !(hooks && chain && ST.key === "japan");
+    const win = hooks && finalGoal && hooks.amFirst && hooks.amFirst();
+    if (win) fx.push({ type: "banner", t0: now + 250, dur: 2700, text: "WINNER", sub: `${ST.finalName} 一番のり！`, color: "#e8a019", big: true });
+    else fx.push({ type: "banner", t0: now + 250, dur: 2700, text: `${ST.finalName} 完成！`, sub: `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`, color: "#e8a019", big: true });
     for (let i = 0; i < 5; i++) later(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
     if (ST.key === "japan" && !hooks) { store.set("prefpack.asiaUnlocked", true); showAsiaUnlock(); }
     shake = 14;
@@ -563,7 +569,7 @@
     const isBest = score > best[mode];
     if (isBest) { best[mode] = score; store.set(`prefpack.best.${mode}`, score); }
     showBest();
-    if (hooks) { if (hooks.onEnd) hooks.onEnd(clearedNow, score); return; }
+    if (hooks) { if (hooks.onEnd) hooks.onEnd(clearedNow, score, { winner: wonEarly }); return; }
 
     const reached = cleared.length ? cleared[cleared.length - 1] : "";
     lastResult = { mode, score, reached, laps: lap, stages: cleared.length };
@@ -1235,6 +1241,19 @@
     leaveToTitle: () => toTitle(),
     snapshot,
     drawBoard,
+    // 対戦で1位が確定したとき（ほかの全員がゲームオーバーで、点数も上回った）: WINNER を出して終わる
+    winner(reason) {
+      if (!running || ended || locked || completeAt) return;
+      locked = true;
+      current = null;
+      fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
+      fx.push({ type: "banner", t0: now + 150, dur: 2400, text: "WINNER", sub: reason || "", color: "#e8a019", big: true });
+      for (let i = 0; i < 4; i++) later(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 300);
+      shake = 10;
+      vibrate([40, 60, 40, 60, 120]);
+      wonEarly = true;
+      later(() => endGame(false), 2300);
+    },
     // 対戦で最下位が確定したとき: GAME OVER を出して終わる
     gameOver(reason) {
       if (!running || ended || locked || completeAt) return;
