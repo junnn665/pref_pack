@@ -17,13 +17,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261018-6">
+  <link rel="stylesheet" href="style.css?v=20261018-8">
 </head>
 <body>
   <div id="app">
     <header class="hud">
       <div class="stat">
-        <span class="label">スコア</span>
+        <span class="label">スコア <em class="stage-tag" id="stageTag">日本</em></span>
         <span class="value" id="score">0</span>
       </div>
       <div class="stat">
@@ -65,6 +65,7 @@
             <li>地方がそろうとボーナス。<b>シャッフル</b>は何回でもOK</li>
             <li>線より上にあふれたら終わり</li>
             <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
+            <li>日本列島が完成したら<b>2周目</b>か<b>エクストラステージ アジア大陸</b>へ。スコアは合計されます</li>
             <li><b>対戦</b>：同じ順番で県が出る。先に日本列島を作った人の勝ち。地方をそろえると、相手のあふれ線が 10 秒下がる</li>
           </ul>
         </details>
@@ -78,11 +79,39 @@
           </button>
         </div>
         <p class="mode-note">かんたん：ピースが小さめ・おとなりの県が出やすい・くっつく相手が光る</p>
+        <button class="btn rank-open" id="rankOpenBtn">🏆 ランキング</button>
         <p class="section-label">みんなで対戦 <span class="net-badge">通信</span></p>
         <div class="modes">
           <button class="btn vs" id="mpCreateBtn">部屋を作る</button>
           <button class="btn vs ghosty" id="mpJoinBtn">番号で参加</button>
         </div>
+      </div>
+    </section>
+
+    <!-- ステージクリア -->
+    <section class="overlay hidden" id="clearScreen">
+      <div class="card clear-card">
+        <h2 class="clear-title" id="clearTitle">日本列島 完成！</h2>
+        <p class="result-score"><span id="clearScore">0</span><small>点</small></p>
+        <p class="result-sub" id="clearSub"></p>
+        <p class="section-label center">つぎは どっちに いく？</p>
+        <button class="btn primary" id="goLapBtn">2周目へ</button>
+        <button class="btn vs" id="goAsiaBtn">エクストラステージ<br><span class="big">アジア大陸</span></button>
+        <button class="btn" id="goEndBtn">ここでおわる（結果へ）</button>
+      </div>
+    </section>
+
+    <!-- ランキング -->
+    <section class="overlay hidden" id="rankScreen">
+      <div class="card">
+        <h2>🏆 ランキング</h2>
+        <div class="seg" id="rankSeg">
+          <button class="on" data-mode="normal">ふつう</button>
+          <button data-mode="easy">かんたん</button>
+        </div>
+        <p class="mp-msg info" id="rankScreenMsg"></p>
+        <ol class="rank-list" id="rankScreenList"></ol>
+        <button class="btn" id="rankCloseBtn">もどる</button>
       </div>
     </section>
 
@@ -162,17 +191,28 @@
         <h2 id="resultTitle">ゲームオーバー</h2>
         <p class="result-sub" id="resultSub"></p>
         <p class="result-score"><span id="resultScore">0</span><small>点</small></p>
+        <p class="new-best hidden" id="newBest">自己ベスト更新！</p>
+        <div class="breakdown" id="resultBreakdown"></div>
         <div class="regions" id="resultRegions"></div>
+        <div class="rank-box" id="rankBox">
+          <div class="rank-submit" id="rankSubmit">
+            <input id="rankName" maxlength="10" placeholder="なまえ" autocomplete="nickname">
+            <button class="btn small primary" id="rankSubmitBtn">ランキングに登録</button>
+          </div>
+          <p class="mp-msg info" id="rankMsg"></p>
+          <ol class="rank-list" id="rankList"></ol>
+        </div>
         <button class="btn primary" id="againBtn">もう一度</button>
         <button class="btn" id="resultTitleBtn">モードをえらびなおす</button>
       </div>
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261018-6"></script>
-  <script src="js/prefs.js?v=20261018-6"></script>
-  <script src="js/game.js?v=20261018-6"></script>
-  <script src="lib/qrcode.min.js?v=20261018-6"></script>
-  <script src="js/net.js?v=20261018-6"></script>
+  <script src="vendor/matter.min.js?v=20261018-8"></script>
+  <script src="js/prefs.js?v=20261018-8"></script>
+  <script src="js/asia.js?v=20261018-8"></script>
+  <script src="js/game.js?v=20261018-8"></script>
+  <script src="lib/qrcode.min.js?v=20261018-8"></script>
+  <script src="js/net.js?v=20261018-8"></script>
 </body>
 </html>

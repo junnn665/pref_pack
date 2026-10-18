@@ -73,6 +73,14 @@
       onConnected(cb) { db.ref(".info/connected").on("value", (s) => cb(!!s.val())); },
       onDisconnectSet(path, v) { return db.ref(path).onDisconnect().set(v); },
       cancelDisconnect(path) { return db.ref(path).onDisconnect().cancel(); },
+      // 子要素 child の大きい順に n 件
+      top(path, child, n) {
+        return db.ref(path).orderByChild(child).limitToLast(n).once("value").then((snap) => {
+          const out = [];
+          snap.forEach((c) => { out.push({ id: c.key, ...c.val() }); });
+          return out.sort((a, b) => (b[child] || 0) - (a[child] || 0));
+        });
+      },
       // 古くなった対戦部屋（pref- で始まるもの）だけを消す
       cleanOld(cutoff) {
         return db.ref("rooms").orderByChild("created").endAt(cutoff).limitToFirst(30).once("value").then((snap) => {
@@ -110,7 +118,7 @@
   }
 
   // ---------- screens ----------
-  const OVERLAYS = ["startScreen", "menuScreen", "resultScreen", "mpCreate", "mpJoin", "mpLobby", "mpResult"];
+  const OVERLAYS = ["startScreen", "menuScreen", "resultScreen", "clearScreen", "rankScreen", "mpCreate", "mpJoin", "mpLobby", "mpResult"];
   function show(id) {
     OVERLAYS.forEach((o) => $(o).classList.toggle("hidden", o !== id));
   }
@@ -592,6 +600,88 @@
       } catch { /* ignore */ }
     });
   }
+
+  // ---------- ランキング（ひとりで遊んだスコア） ----------
+  // rooms/pref-ranking/<mode>/<id>: name, score, reached, laps, pid, t
+  const RANK = "rooms/pref-ranking";
+  const RANK_SHOW = 30;
+  let myLastEntry = null;
+
+  async function topScores(m, n) {
+    if (!(await ensureNet())) throw new Error("timeout");
+    return NET.top(`${RANK}/${m}`, "score", n);
+  }
+  function rankRows(list, highlightId) {
+    return list.map((r, i) => {
+      const sub = [r.reached || "", r.laps > 1 ? `${r.laps}周` : ""].filter(Boolean).join("・");
+      return `<li class="${r.id === highlightId ? "me" : ""}"><span class="n">${i + 1}</span><span class="nm">${esc(r.name)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="sc">${r.score}</span></li>`;
+    }).join("");
+  }
+
+  async function loadResultRanking(m, highlightId, myScore) {
+    msg("rankMsg", "ランキングを読みこみ中…", true);
+    try {
+      const list = await topScores(m, 100);
+      $("rankList").innerHTML = rankRows(list.slice(0, 10), highlightId);
+      if (highlightId) {
+        const pos = list.findIndex((r) => r.id === highlightId);
+        msg("rankMsg", pos >= 0 ? `あなたは ${pos + 1}位！（${G().MODES[m].name}）` : "登録しました（100位圏外）", true);
+      } else {
+        const better = list.filter((r) => r.score > myScore).length;
+        msg("rankMsg", list.length && myScore > 0 ? (better < 100 ? `登録すると ${better + 1}位 に入ります` : "") : "", true);
+      }
+    } catch (e) { msg("rankMsg", netError(e)); }
+  }
+
+  window.PrefRank = {
+    onResult(r) {
+      myLastEntry = r;
+      $("rankName").value = myName();
+      $("rankSubmit").classList.toggle("done", !(r.score > 0));
+      $("rankSubmitBtn").disabled = false;
+      $("rankList").innerHTML = "";
+      loadResultRanking(r.mode, null, r.score);
+    },
+  };
+
+  $("rankSubmitBtn").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+    const r = myLastEntry;
+    if (!r) return;
+    const name = $("rankName").value.trim().slice(0, 10);
+    if (!name) { msg("rankMsg", "なまえを入れてね"); return; }
+    saveName(name);
+    msg("rankMsg", "登録しています…", true);
+    if (!(await ensureNet())) { msg("rankMsg", netError("timeout")); return; }
+    try {
+      const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      await NET.set(`${RANK}/${r.mode}/${id}`, { name, score: r.score, reached: r.reached || "", laps: r.laps || 1, pid: PID, t: NET.now() });
+      // 部屋の自動おそうじの対象にならないように、遠い未来の作成日時を入れておく
+      NET.set(`${RANK}/created`, 9e15).catch(() => {});
+      $("rankSubmit").classList.add("done");
+      myLastEntry = null;
+      await loadResultRanking(r.mode, id, r.score);
+    } catch (err) { msg("rankMsg", netError(err)); }
+  }));
+
+  let rankMode = "normal";
+  async function loadRankScreen() {
+    $("rankScreenList").innerHTML = "";
+    msg("rankScreenMsg", "読みこみ中…", true);
+    try {
+      const list = await topScores(rankMode, RANK_SHOW);
+      $("rankScreenList").innerHTML = rankRows(list);
+      msg("rankScreenMsg", list.length ? "" : "まだだれも登録していません。一番乗りしよう！", true);
+    } catch (e) { msg("rankScreenMsg", netError(e)); }
+  }
+  $("rankOpenBtn").addEventListener("click", () => { show("rankScreen"); loadRankScreen(); });
+  $("rankCloseBtn").addEventListener("click", () => show("startScreen"));
+  $("rankSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-mode]");
+    if (!b) return;
+    rankMode = b.dataset.mode;
+    $("rankSeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    loadRankScreen();
+  });
 
   window.__prefnet = { get room() { return R; }, get code() { return code; }, PID, leaveRoom };
 })();

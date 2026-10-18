@@ -1,11 +1,11 @@
-/* 都道府県ゲーム
+/* 都道府県ゲーム（中濱Games）
  * 都道府県を箱に落として詰める。地図で隣り合う県がふれるとくっつく。
+ * 日本列島が完成したら「2周目」か「エクストラステージ アジア大陸」へ。
  */
 (() => {
   "use strict";
 
   const { Engine, Bodies, Body, Composite, Events, Vertices } = Matter;
-  const DATA = window.PREF_DATA;
 
   // ---------- constants ----------
   const W = 400;            // logical canvas size
@@ -17,56 +17,92 @@
   const HANG_Y = 74;        // where the current piece hangs
   const DROP_COOLDOWN = 450;
   const SHUFFLE_COOLDOWN = 1200;
+  const LAP_LINE = 18;      // 周回ごとにあふれ線が下がる量
+  const LINE_DROP = 70;     // 対戦のおじゃま
+  const FONT = '"M PLUS Rounded 1c", sans-serif';
 
   // ゲームモード
-  //  exp:       合体時の縮み具合（大きいほど 1 県のピースが小さく、詰めやすい）
+  //  exp:       合体時の縮み具合（大きいほど 1 ピースが小さく、詰めやすい）
   //  lineY:     あふれラインの高さ（小さいほど上＝余裕が増える）
   //  overLimit: ラインを超えてからゲームオーバーまでの猶予(ms)
-  //  neighbor:  次の県を「すでに箱にある県のおとなり」から出やすくする
-  //  hint:      今落とす県とくっつけるかたまりを光らせる
+  //  neighbor:  次のピースを「箱にあるもののおとなり」にする確率
+  //  hint:      今落とすピースとくっつけるかたまりを光らせる
   const MODES = {
-    normal: { name: "ふつう", exp: 0.25, lineY: 150, overLimit: 2200, neighbor: false, hint: false },
-    easy:   { name: "かんたん", exp: 0.32, lineY: 130, overLimit: 4000, neighbor: true, hint: true },
+    normal: { name: "ふつう", exp: 0.25, lineY: 150, overLimit: 2200, neighbor: 0, hint: false },
+    easy:   { name: "かんたん", exp: 0.275, lineY: 142, overLimit: 3000, neighbor: 0.4, hint: true },
   };
   let mode = "normal";
-  let LINE_Y = MODES.normal.lineY;   // overflow line
-  let EXP = MODES.normal.exp;        // group linear size ∝ area^EXP (shrinks big groups)
+  let LINE_Y = MODES.normal.lineY;
+  let EXP = MODES.normal.exp;
   let OVER_LIMIT = MODES.normal.overLimit;
 
-  const REGION_COLORS = [
-    "#7fb7e8", // 北海道
-    "#86cfb0", // 東北
-    "#f5ae62", // 関東
-    "#a3d06a", // 中部
-    "#f29abf", // 近畿
-    "#b6a3e6", // 中国
-    "#f3cd52", // 四国
-    "#ef8a7c", // 九州・沖縄
-  ];
-  const REGION_STROKE = REGION_COLORS.map((c) => shade(c, -0.28));
-
-  // ---------- prefecture data ----------
-  const PREFS = {};
-  let TOTAL_AREA = 0;
-  for (const p of DATA.prefs) {
-    const path = new Path2D();
-    for (let i = 0; i < p.poly.length; i += 2) {
-      if (i === 0) path.moveTo(p.poly[i], p.poly[i + 1]);
-      else path.lineTo(p.poly[i], p.poly[i + 1]);
+  // ---------- stages ----------
+  function buildStage(data, colors, info) {
+    const pieces = {};
+    let total = 0;
+    for (const p of data.prefs) {
+      const polys = p.polys || [p.poly];
+      const hulls = p.hulls || [p.hull];
+      const path = new Path2D();
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const poly of polys) {
+        for (let i = 0; i < poly.length; i += 2) {
+          const x = poly[i], y = poly[i + 1];
+          if (i === 0) path.moveTo(x, y); else path.lineTo(x, y);
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+        path.closePath();
+      }
+      const hullPts = hulls.map((h) => {
+        const pts = [];
+        for (let i = 0; i < h.length; i += 2) pts.push({ x: h[i], y: h[i + 1] });
+        return pts;
+      });
+      pieces[p.id] = {
+        ...p, path, hullPts, adjSet: new Set(p.adj),
+        color: colors[p.region], stroke: shade(colors[p.region], -0.28),
+        bbox: { minX, minY, maxX, maxY },
+      };
+      total += p.area;
     }
-    path.closePath();
-    const hull = [];
-    for (let i = 0; i < p.hull.length; i += 2) hull.push({ x: p.hull[i], y: p.hull[i + 1] });
-    PREFS[p.id] = { ...p, path, hullPts: hull, adjSet: new Set(p.adj) };
-    TOTAL_AREA += p.area;
+    const [ew, eh] = data.extent;
+    return {
+      ...info,
+      pieces,
+      ids: Object.keys(pieces).map(Number),
+      total, ew, eh,
+      sTotal: Math.min((BOX_R - BOX_L - 30) / ew, (FLOOR - 150 - 40) / eh),
+      regions: data.regions,
+      regionMembers: data.regionMembers,
+      colors,
+      strokes: colors.map((c) => shade(c, -0.28)),
+    };
   }
-  const ALL_IDS = Object.keys(PREFS).map(Number);
-  const [EXT_W, EXT_H] = DATA.extent;
-  // whole Japan must fit in the box with margin
-  const S_TOTAL = Math.min((BOX_R - BOX_L - 30) / EXT_W, (FLOOR - 150 - 40) / EXT_H);
 
-  function scaleFor(area) {
-    return S_TOTAL * Math.pow(area / TOTAL_AREA, EXP - 0.5);
+  const STAGES = {
+    japan: buildStage(window.PREF_DATA, [
+      "#7fb7e8", // 北海道
+      "#86cfb0", // 東北
+      "#f5ae62", // 関東
+      "#a3d06a", // 中部
+      "#f29abf", // 近畿
+      "#b6a3e6", // 中国
+      "#f3cd52", // 四国
+      "#ef8a7c", // 九州・沖縄
+    ], { key: "japan", name: "日本", finalName: "日本列島", regionName: (r) => `${r}地方`, skipRegions: [0], clearBonus: 3000, par: 240 }),
+    asia: buildStage(window.ASIA_DATA, [
+      "#ef8a7c", // 東アジア
+      "#86cfb0", // 東南アジア
+      "#f5ae62", // 南アジア
+      "#7fb7e8", // 中央アジア
+      "#b6a3e6", // 西アジア
+    ], { key: "asia", name: "アジア", finalName: "アジア大陸", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025 }),
+  };
+  let ST = STAGES.japan;
+
+  function scaleFor(area, st = ST, exp = EXP) {
+    return st.sTotal * Math.pow(area / st.total, exp - 0.5);
   }
 
   // ---------- DOM ----------
@@ -76,11 +112,12 @@
   const nextCanvas = $("nextCanvas");
   const nctx = nextCanvas.getContext("2d");
   const ui = {
-    score: $("score"), remain: $("remain"), nextName: $("nextName"),
+    score: $("score"), remain: $("remain"), nextName: $("nextName"), stageTag: $("stageTag"),
     shuffleBtn: $("shuffleBtn"), toast: $("toast"),
-    start: $("startScreen"), menu: $("menuScreen"), result: $("resultScreen"),
-    bestNormal: $("bestNormal"), bestEasy: $("bestEasy"), resultTitle: $("resultTitle"), resultSub: $("resultSub"),
-    resultScore: $("resultScore"), resultRegions: $("resultRegions"),
+    start: $("startScreen"), menu: $("menuScreen"), result: $("resultScreen"), clear: $("clearScreen"),
+    bestNormal: $("bestNormal"), bestEasy: $("bestEasy"),
+    resultTitle: $("resultTitle"), resultSub: $("resultSub"), resultScore: $("resultScore"),
+    resultRegions: $("resultRegions"), resultBreakdown: $("resultBreakdown"), newBest: $("newBest"),
   };
 
   // ---------- storage ----------
@@ -91,12 +128,13 @@
 
   // ---------- state ----------
   let engine, world;
-  let groups = [];          // live bodies (group records)
+  let groups = [];
   let queue = [];
-  let current = null;       // hanging piece (not in world yet)
+  let current = null;
   let aimX = W / 2;
   let canDropAt = 0;
   let score = 0;
+  let parts = null;          // スコアの内訳
   const best = { normal: store.get("prefpack.best.normal", store.get("prefpack.best", 0)), easy: store.get("prefpack.best.easy", 0) };
   let shuffleReadyAt = 0;
   let shufflesUsed = 0;
@@ -105,20 +143,21 @@
   let paused = false;
   let ended = false;
   let overTimer = 0;
-  let idleTimer = 0;
   let combo = 0;
   let comboTimer = 0;
   let particles = [];
+  let fx = [];
   let now = 0;
   let completeAt = 0;
+  let stageStart = 0;
+  let lap = 1;
+  let cleared = [];          // 完成させたステージ ["日本列島", "アジア大陸", ...]
   let rand = Math.random;    // seeded in multiplayer so everyone gets the same order
   let hooks = null;          // multiplayer callbacks (null = solo)
-  let lineDownUntil = 0;     // attack: overflow line lowered until this game time
-  let lineDownFrom = "";
-  const LINE_DROP = 70;
+  let lineDownUntil = 0;
+  let shake = 0;
   const curLine = () => LINE_Y + (now < lineDownUntil ? LINE_DROP : 0);
 
-  // seeded random (mulberry32)
   function seeded(str) {
     let h = 1779033703 ^ str.length;
     for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
@@ -129,59 +168,50 @@
   showBest();
   function showBest() { ui.bestNormal.textContent = best.normal; ui.bestEasy.textContent = best.easy; }
 
-  // ---------- group creation ----------
-  // A "group" is a set of prefectures rendered in true map arrangement,
-  // scaled by the group's total area.
-  function makeGroupGeom(members) {
+  // ---------- groups ----------
+  function makeGroupGeom(members, st = ST, exp = EXP) {
     let area = 0, ox = 0, oy = 0;
     for (const id of members) {
-      const p = PREFS[id];
+      const p = st.pieces[id];
       area += p.area; ox += p.cx * p.area; oy += p.cy * p.area;
     }
     ox /= area; oy /= area;
-    const s = scaleFor(area);
-    return { area, ox, oy, s };
+    return { area, ox, oy, s: scaleFor(area, st, exp) };
   }
 
   function createGroupBody(members, x, y) {
     const geom = makeGroupGeom(members);
-    const parts = [];
+    const bodyParts = [];
     for (const id of members) {
-      const verts = PREFS[id].hullPts.map((v) => ({ x: x + (v.x - geom.ox) * geom.s, y: y + (v.y - geom.oy) * geom.s }));
-      const c = Vertices.centre(verts);
-      const part = Bodies.fromVertices(c.x, c.y, [verts], {}, false);
-      parts.push(part);
+      for (const hull of ST.pieces[id].hullPts) {
+        const verts = hull.map((v) => ({ x: x + (v.x - geom.ox) * geom.s, y: y + (v.y - geom.oy) * geom.s }));
+        const c = Vertices.centre(verts);
+        bodyParts.push(Bodies.fromVertices(c.x, c.y, [verts], {}, false));
+      }
     }
     const body = Body.create({
-      parts,
-      friction: 0.35,
-      frictionStatic: 0.6,
-      restitution: 0.08,
-      frictionAir: 0.012,
-      density: 0.0012,
+      parts: bodyParts, friction: 0.35, frictionStatic: 0.6, restitution: 0.08, frictionAir: 0.012, density: 0.0012,
     });
     const g = {
-      body,
-      members: new Set(members),
-      geom,
+      body, members: new Set(members), geom,
       local: { x: body.position.x - x, y: body.position.y - y },
-      born: now,
-      droppedAt: now,
-      gold: members.length === ALL_IDS.length,
+      born: now, droppedAt: now, flash: 0, glowUntil: 0, glowColor: null,
+      gold: members.length === ST.ids.length,
     };
     body.plugin.group = g;
     return g;
   }
 
   function groupBoundsAt(members) {
-    // bounds of a group's outline at angle 0, relative to its body position
     const geom = makeGroupGeom(members);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const id of members) {
-      for (const v of PREFS[id].hullPts) {
-        const px = (v.x - geom.ox) * geom.s, py = (v.y - geom.oy) * geom.s;
-        minX = Math.min(minX, px); maxX = Math.max(maxX, px);
-        minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      for (const hull of ST.pieces[id].hullPts) {
+        for (const v of hull) {
+          const px = (v.x - geom.ox) * geom.s, py = (v.y - geom.oy) * geom.s;
+          minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+          minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+        }
       }
     }
     return { minX, minY, maxX, maxY, geom };
@@ -205,13 +235,19 @@
     return a;
   }
 
+  // opts: { seed, hooks, stage, lap, keep (スコアを引きつぐ) }
   function newGame(m, opts = {}) {
     if (m) mode = m;
+    const M = MODES[mode];
+    ST = STAGES[opts.stage || "japan"];
+    lap = opts.lap || 1;
+    EXP = M.exp + (ST.expAdd || 0);
+    LINE_Y = M.lineY + LAP_LINE * Math.min(lap - 1, 3);
+    OVER_LIMIT = M.overLimit;
     rand = opts.seed ? seeded(String(opts.seed)) : Math.random;
     hooks = opts.hooks || null;
     lineDownUntil = 0;
-    const M = MODES[mode];
-    EXP = M.exp; LINE_Y = M.lineY; OVER_LIMIT = M.overLimit;
+
     engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
     engine.gravity.y = 1;
     world = engine.world;
@@ -225,41 +261,53 @@
     Events.on(engine, "collisionActive", onCollide);
 
     groups = [];
-    queue = shuffleArray(ALL_IDS.slice());
-    score = 0;
+    queue = shuffleArray(ST.ids.slice());
+    if (!opts.keep) {
+      score = 0;
+      parts = { merge: 0, region: 0, clear: 0, time: 0 };
+      cleared = [];
+      shufflesUsed = 0;
+    }
     shuffleReadyAt = 0;
-    shufflesUsed = 0;
     regionsDone = new Set();
     overTimer = 0;
-    idleTimer = 0;
     combo = 0;
     particles = [];
+    fx = [];
     ended = false;
     paused = false;
     completeAt = 0;
+    stageStart = now;
     current = null;
+    pending = [];
+    [ui.start, ui.menu, ui.result, ui.clear].forEach((el) => el.classList.add("hidden"));
+    ui.stageTag.textContent = stageLabel();
     nextPiece();
     updateHud();
     running = true;
+    if (opts.keep || ST.key !== "japan") {
+      fx.push({ type: "banner", t0: now, dur: 1800, text: `${ST.key === "asia" ? "エクストラステージ" : `${lap}周目`}`, sub: ST.key === "asia" ? "アジア大陸をつなげよう" : "線が少し下がったよ", color: ST.key === "asia" ? "#3b6fd8" : "#e85d4a" });
+    }
   }
+  const stageLabel = () => (ST.key === "asia" ? "アジア" : lap > 1 ? `日本 ${lap}周目` : "日本");
 
   function nextPiece() {
     if (!queue.length) { current = null; drawNext(); return; }
     const id = queue.shift();
-    const bb = groupBoundsAt([id]);
-    current = { id, bb };
-    if (MODES[mode].neighbor) arrangeNeighborNext();
+    current = { id, bb: groupBoundsAt([id]) };
+    const nb = MODES[mode].neighbor;
+    if (nb) arrangeNeighborNext(nb);
     aimX = clampAim(aimX);
     drawNext();
   }
 
-  // かんたんモード: 次の県を、箱の中か今の県のおとなりから選びやすくする
-  function arrangeNeighborNext() {
-    if (queue.length < 2 || rand() > 0.8) return;
+  // かんたんモード: 次のピースを、箱の中か今のピースのおとなりから選ぶことがある
+  function arrangeNeighborNext(prob) {
+    if (queue.length < 2 || rand() > prob) return;
     const placed = new Set(current ? [current.id] : []);
     for (const g of groups) for (const id of g.members) placed.add(id);
     const cands = [];
-    queue.forEach((id, i) => { for (const p of placed) if (PREFS[id].adjSet.has(p)) { cands.push(i); break; } });
+    queue.forEach((id, i) => { for (const p of placed) if (ST.pieces[id].adjSet.has(p)) { cands.push(i); break; } });
     if (!cands.length) return;
     const i = cands[(rand() * cands.length) | 0];
     const [id] = queue.splice(i, 1);
@@ -275,7 +323,6 @@
   function drop() {
     if (!running || paused || ended || !current || now < canDropAt) return;
     const g = createGroupBody([current.id], aimX, HANG_Y);
-    // match hang position: body center vs map origin
     Body.setPosition(g.body, { x: aimX + g.local.x, y: HANG_Y + g.local.y });
     keepInside(g.body);
     Body.setVelocity(g.body, { x: 0, y: 2 });
@@ -286,7 +333,7 @@
     current = null;
     vibrate(8);
     updateHud();
-    setTimeout(() => { if (running && !ended) { nextPiece(); updateHud(); } }, DROP_COOLDOWN);
+    setTimeout(() => { if (running && !ended && !current) { nextPiece(); updateHud(); } }, DROP_COOLDOWN);
   }
 
   // ---------- merging ----------
@@ -302,7 +349,7 @@
 
   function adjacent(a, b) {
     for (const id of a.members) {
-      const adj = PREFS[id].adjSet;
+      const adj = ST.pieces[id].adjSet;
       for (const j of b.members) if (adj.has(j)) return true;
     }
     return false;
@@ -318,6 +365,13 @@
       merge(a, b);
     }
     pending = [];
+  }
+
+  function mainColor(members) {
+    const cnt = {};
+    for (const id of members) { const r = ST.pieces[id].region; cnt[r] = (cnt[r] || 0) + ST.pieces[id].area; }
+    const r = Object.keys(cnt).sort((x, y) => cnt[y] - cnt[x])[0];
+    return ST.colors[r];
   }
 
   function merge(a, b) {
@@ -338,44 +392,96 @@
     keepInside(g.body);
     Body.setVelocity(g.body, { x: vx * 0.5, y: Math.min(vy, 2) * 0.5 });
     g.droppedAt = Math.min(a.droppedAt, b.droppedAt);
+    g.flash = 1;
     Composite.add(world, g.body);
     groups.push(g);
 
-    // score & effects
+    // score
     combo = now - comboTimer < 900 ? combo + 1 : 1;
     comboTimer = now;
-    const gained = 10 * members.length * combo;
+    const gained = 10 * members.length * Math.min(combo, 5) * lap;
     score += gained;
-    burst(g.body.position.x, g.body.position.y, members.length);
+    parts.merge += gained;
+
+    // effects: ring + "+点" + particles
+    const color = mainColor(members);
+    const { x, y } = g.body.position;
+    const size = Math.max(g.body.bounds.max.x - g.body.bounds.min.x, g.body.bounds.max.y - g.body.bounds.min.y);
+    fx.push({ type: "ring", t0: now, dur: 520, x, y, r0: size * 0.25, r1: size * 0.75 + 30, color });
+    fx.push({ type: "ring", t0: now + 90, dur: 520, x, y, r0: size * 0.2, r1: size * 0.6 + 20, color: "#ffffff" });
+    // 文字は同時に出しすぎない（連鎖で画面が埋まらないように）
+    const bigBanner = fx.some((f) => f.type === "banner" && f.big);
+    fx = fx.filter((f, i, arr) => f.type !== "text" || arr.filter((x) => x.type === "text").indexOf(f) >= arr.filter((x) => x.type === "text").length - 3);
+    if (!bigBanner) {
+      fx.push({ type: "text", t0: now, dur: 900, x, y: y - 10, text: `+${gained}`, color: shade(color, -0.35), size: 18 + Math.min(8, members.length) });
+      if (combo >= 2) fx.push({ type: "text", t0: now + 120, dur: 900, x, y: y - 36, text: `${combo} コンボ！`, color: "#e85d4a", size: Math.min(28, 16 + combo * 2) });
+    }
+    burst(x, y, members.length, false, color);
+    if (members.length >= 6) shake = Math.max(shake, 4 + Math.min(6, members.length / 4));
     vibrate(members.length > 10 ? 30 : 15);
-    if (combo >= 2) toast(`${combo} コンボ！`);
+
     checkRegions(g);
-    if (g.gold) completeJapan(g);
+    if (g.gold) completeStage(g);
     updateHud();
   }
 
   function checkRegions(g) {
-    DATA.regionMembers.forEach((ids, ri) => {
-      if (regionsDone.has(ri)) return;
-      if (ri === 0) return; // 北海道は1県なので地方ボーナスなし
-      if (ids.every((id) => g.members.has(id))) {
-        regionsDone.add(ri);
-        score += 300;
-        toast(`${DATA.regions[ri]}地方 そろった！ +300` + (hooks ? "（おじゃま発動！）" : ""), true);
-        if (hooks && hooks.onRegion) hooks.onRegion(ri);
+    ST.regionMembers.forEach((ids, ri) => {
+      if (regionsDone.has(ri) || ST.skipRegions.includes(ri)) return;
+      if (!ids.every((id) => g.members.has(id))) return;
+      regionsDone.add(ri);
+      const bonus = 300 * lap;
+      score += bonus;
+      parts.region += bonus;
+      const color = ST.colors[ri];
+      g.glowUntil = now + 1800;
+      g.glowColor = color;
+      if (!g.gold) {
+        fx.push({ type: "banner", t0: now, dur: 1700, text: `${ST.regionName(ST.regions[ri])}`, sub: `コンプリート！ +${bonus}`, color });
+        confetti(26, [color, shade(color, -0.25), "#ffffff", "#f7d35c"]);
+        shake = Math.max(shake, 8);
+        vibrate([20, 40, 30]);
       }
+      if (hooks && hooks.onRegion) hooks.onRegion(ri);
     });
   }
 
-  function completeJapan(g) {
-    const bonus = 3000 + Math.max(0, 10 - shufflesUsed) * 100;
-    score += bonus;
+  function completeStage(g) {
+    const secs = (now - stageStart) / 1000;
+    const bonus = ST.clearBonus * lap;
+    const tbonus = Math.max(0, Math.round((ST.par - secs) * 10)) * lap;
+    score += bonus + tbonus;
+    parts.clear += bonus;
+    parts.time += tbonus;
+    cleared.push(ST.key === "japan" && lap > 1 ? `日本列島（${lap}周目）` : ST.finalName);
     completeAt = now;
-    toast("日本列島 完成！！", true);
+    g.glowUntil = now + 4000;
+    g.glowColor = "#f7d35c";
+    fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
+    fx.push({ type: "rays", t0: now, dur: 3200, group: g });
+    fx.push({ type: "banner", t0: now + 250, dur: 2700, text: `${ST.finalName} 完成！`, sub: `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`, color: "#e8a019", big: true });
+    for (let i = 0; i < 5; i++) setTimeout(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
+    shake = 14;
     vibrate([40, 60, 40, 60, 120]);
-    for (let i = 0; i < 6; i++) setTimeout(() => burst(W / 2 + (Math.random() - 0.5) * 300, 200 + Math.random() * 300, 20, true), i * 180);
-    setTimeout(() => endGame(true), 2600);
+    updateHud();
+    if (hooks) { setTimeout(() => endGame(true), 2800); return; }
+    setTimeout(showStageClear, 3200);
   }
+
+  // ---------- stage clear: つぎは どっちに いく？ ----------
+  function showStageClear() {
+    if (!completeAt || ended) return;
+    running = false;
+    $("clearTitle").textContent = `${ST.finalName} 完成！`;
+    $("clearScore").textContent = score;
+    $("clearSub").textContent = `${MODES[mode].name}モード・いまの合計`;
+    $("goAsiaBtn").style.display = ST.key === "japan" ? "" : "none";
+    $("goLapBtn").textContent = ST.key === "japan" ? `${lap + 1}周目へ` : `日本 ${lap + 1}周目へ`;
+    ui.clear.classList.remove("hidden");
+  }
+  $("goLapBtn").addEventListener("click", () => newGame(mode, { stage: "japan", lap: lap + 1, keep: true }));
+  $("goAsiaBtn").addEventListener("click", () => newGame(mode, { stage: "asia", lap, keep: true }));
+  $("goEndBtn").addEventListener("click", () => { ui.clear.classList.add("hidden"); endGame(true); });
 
   // ---------- shuffle ----------
   function doShuffle() {
@@ -387,43 +493,56 @@
       Body.setAngularVelocity(g.body, (Math.random() - 0.5) * 0.25);
     }
     shake = 12;
-    idleTimer = 0;
     vibrate(25);
     updateHud();
   }
 
   // ---------- end ----------
-  function endGame(cleared) {
+  let lastResult = null;
+  function endGame(clearedNow) {
     if (ended) return;
     ended = true;
     running = false;
-    if (score > best[mode]) { best[mode] = score; store.set(`prefpack.best.${mode}`, score); }
+    const isBest = score > best[mode];
+    if (isBest) { best[mode] = score; store.set(`prefpack.best.${mode}`, score); }
     showBest();
-    if (hooks) { if (hooks.onEnd) hooks.onEnd(cleared, score); return; }
-    ui.resultTitle.textContent = cleared ? "日本列島 完成！" : "ゲームオーバー";
+    if (hooks) { if (hooks.onEnd) hooks.onEnd(clearedNow, score); return; }
+
+    const reached = cleared.length ? cleared[cleared.length - 1] : "";
+    lastResult = { mode, score, reached, laps: lap, stages: cleared.length };
+    ui.resultTitle.textContent = cleared.length ? (clearedNow && completeAt ? `${ST.finalName} 完成！` : "おつかれさま！") : "ゲームオーバー";
     const left = groups.length + (current ? 1 : 0) + queue.length;
-    ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared
-      ? "47 都道府県がひとつにつながった！"
-      : `のこり ${left} かたまり`);
+    ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared.length
+      ? `${cleared.join(" → ")} まで完成`
+      : `${ST.name}・のこり ${left} かたまり`);
     ui.resultScore.textContent = score;
+    ui.newBest.classList.toggle("hidden", !isBest || score === 0);
+
+    const rows = [
+      ["くっつけた", parts.merge],
+      ["地方そろえ", parts.region],
+      ["完成ボーナス", parts.clear],
+      ["タイムボーナス", parts.time],
+    ];
+    ui.resultBreakdown.innerHTML = rows.map(([k, v]) => `<div class="${v ? "" : "zero"}"><span>${k}</span><b>${v}</b></div>`).join("");
+
     ui.resultRegions.innerHTML = "";
-    DATA.regions.forEach((name, ri) => {
-      if (ri === 0) return;
+    ST.regions.forEach((name, ri) => {
+      if (ST.skipRegions.includes(ri)) return;
       const s = document.createElement("span");
       s.textContent = name;
-      if (regionsDone.has(ri) || cleared) { s.classList.add("done"); s.style.background = REGION_STROKE[ri]; }
+      if (regionsDone.has(ri) || completeAt) { s.classList.add("done"); s.style.background = ST.strokes[ri]; }
       ui.resultRegions.appendChild(s);
     });
-    setTimeout(() => ui.result.classList.remove("hidden"), cleared ? 0 : 600);
+    if (window.PrefRank) window.PrefRank.onResult(lastResult);
+    setTimeout(() => ui.result.classList.remove("hidden"), clearedNow ? 0 : 600);
   }
 
   // ---------- update ----------
-  let shake = 0;
   function update(dt) {
     Engine.update(engine, dt);
     processMerges();
 
-    // overflow check
     let danger = false;
     for (const g of groups) {
       if (now - g.droppedAt < 1500) continue;
@@ -433,23 +552,23 @@
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
     if (overTimer > OVER_LIMIT && !completeAt) endGame(false);
 
-    // shuffle button cooldown
     const shuffleReady = now >= shuffleReadyAt;
     if (ui.shuffleBtn.disabled === shuffleReady) ui.shuffleBtn.disabled = !shuffleReady;
 
     for (const p of particles) {
-      p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life -= dt;
+      p.x += p.vx; p.y += p.vy; p.vy += p.g; p.vx *= p.drag; p.rot += p.vr; p.life -= dt;
     }
-    particles = particles.filter((p) => p.life > 0);
-    if (shake > 0) shake *= 0.85;
+    particles = particles.filter((p) => p.life > 0 && p.y < H + 40);
+    fx = fx.filter((f) => now < f.t0 + f.dur);
+    for (const g of groups) if (g.flash > 0) g.flash = Math.max(0, g.flash - dt / 380);
+    if (shake > 0) shake *= 0.86;
     if (shake < 0.3) shake = 0;
   }
 
   // ---------- rendering ----------
   let dpr = 1, viewScale = 1;
   function resize() {
-    const stage = $("stage");
-    const r = stage.getBoundingClientRect();
+    const r = $("stage").getBoundingClientRect();
     viewScale = Math.min(r.width / W, r.height / H);
     dpr = Math.min(window.devicePixelRatio || 1, 3);
     canvas.style.width = `${W * viewScale}px`;
@@ -463,33 +582,29 @@
   }
 
   function drawBox() {
-    // inside
-    ctx.fillStyle = "#fffaf1";
-    roundRect(ctx, BOX_L, 0, BOX_R - BOX_L, FLOOR, 0);
-    ctx.fill();
-    // subtle grid
-    ctx.strokeStyle = "rgba(201,164,107,.12)";
+    ctx.fillStyle = ST.key === "asia" ? "#f7fbff" : "#fffaf1";
+    ctx.fillRect(BOX_L, 0, BOX_R - BOX_L, FLOOR);
+    ctx.strokeStyle = ST.key === "asia" ? "rgba(59,111,216,.08)" : "rgba(201,164,107,.12)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = BOX_L + 40; x < BOX_R; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, FLOOR); }
     for (let y = FLOOR - 40; y > 0; y -= 40) { ctx.moveTo(BOX_L, y); ctx.lineTo(BOX_R, y); }
     ctx.stroke();
-    // walls
     ctx.fillStyle = "#c9a46b";
     ctx.fillRect(0, 0, WALL, H);
     ctx.fillRect(W - WALL, 0, WALL, H);
     ctx.fillRect(0, FLOOR, W, WALL);
     ctx.fillStyle = "#9c7a45";
     ctx.fillRect(0, H - 4, W, 4);
-    // overflow line
+
     const d = Math.min(1, overTimer / OVER_LIMIT);
+    const ly = curLine();
     ctx.save();
     ctx.setLineDash([8, 7]);
     ctx.lineWidth = 2 + d * 2;
     const pulse = d > 0 ? 0.5 + 0.5 * Math.sin(now / 90) : 0;
     ctx.strokeStyle = d > 0 ? `rgba(232,93,74,${0.55 + 0.45 * pulse})` : "rgba(156,122,69,.45)";
     ctx.beginPath();
-    const ly = curLine();
     ctx.moveTo(BOX_L, ly);
     ctx.lineTo(BOX_R, ly);
     ctx.stroke();
@@ -499,7 +614,7 @@
       ctx.save();
       ctx.fillStyle = "rgba(232,93,74,.08)";
       ctx.fillRect(BOX_L, LINE_Y, BOX_R - BOX_L, LINE_DROP);
-      ctx.font = '800 13px "M PLUS Rounded 1c", sans-serif';
+      ctx.font = `800 13px ${FONT}`;
       ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
       ctx.fillStyle = "#c2402f";
@@ -508,28 +623,32 @@
     }
   }
 
-  function drawGroupShapes(c, members, geom, gold, alpha = 1) {
-    // assumes transform: map km -> world already applied
+  function drawGroupShapes(c, members, geom, gold, alpha = 1, st = ST, flash = 0) {
     c.globalAlpha = alpha;
-    const lw = 1.6 / geom.s;
     for (const id of members) {
-      const p = PREFS[id];
+      const p = st.pieces[id];
       if (gold) {
-        const gr = c.createLinearGradient(0, 0, EXT_W, EXT_H);
+        const gr = c.createLinearGradient(0, 0, st.ew, st.eh);
         gr.addColorStop(0, "#fbe38a");
         gr.addColorStop(0.5, "#e8b931");
         gr.addColorStop(1, "#f6d260");
         c.fillStyle = gr;
       } else {
-        c.fillStyle = REGION_COLORS[p.region];
+        c.fillStyle = p.color;
       }
       c.fill(p.path);
     }
+    if (flash > 0) {
+      c.globalAlpha = alpha * flash * 0.85;
+      c.fillStyle = "#ffffff";
+      for (const id of members) c.fill(st.pieces[id].path);
+      c.globalAlpha = alpha;
+    }
     c.lineJoin = "round";
-    c.lineWidth = lw;
+    c.lineWidth = 1.6 / geom.s;
     for (const id of members) {
-      const p = PREFS[id];
-      c.strokeStyle = gold ? "#b0861a" : REGION_STROKE[p.region];
+      const p = st.pieces[id];
+      c.strokeStyle = gold ? "#b0861a" : p.stroke;
       c.stroke(p.path);
     }
     c.globalAlpha = 1;
@@ -537,8 +656,8 @@
 
   function groupTransform(g) {
     const b = g.body;
-    const pop = Math.max(0, 1 - (now - g.born) / 260);
-    const k = 1 + 0.14 * Math.sin(pop * Math.PI) ;
+    const pop = Math.max(0, 1 - (now - g.born) / 300);
+    const k = 1 + 0.16 * Math.sin(pop * Math.PI);
     ctx.translate(b.position.x, b.position.y);
     ctx.rotate(b.angle);
     ctx.scale(k, k);
@@ -551,17 +670,116 @@
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (const id of members) {
-      const p = PREFS[id];
+      const p = ST.pieces[id];
       const size = geom.s * Math.sqrt(p.area);
       if (size < 22) continue;
-      const fs = Math.max(8, Math.min(15, size * 0.24));
+      let fs = Math.max(8, Math.min(15, size * 0.24));
+      ctx.font = `800 ${fs}px ${FONT}`;
+      const maxW = Math.max(size * 1.2, 30);
+      const tw = ctx.measureText(p.short).width;
+      if (tw > maxW) { fs = Math.max(7, fs * maxW / tw); ctx.font = `800 ${fs}px ${FONT}`; }
       const w = toWorld(p.cx, p.cy);
-      ctx.font = `800 ${fs}px "M PLUS Rounded 1c", sans-serif`;
       ctx.lineWidth = 3;
       ctx.strokeStyle = gold ? "rgba(255,240,180,.9)" : "rgba(255,255,255,.85)";
       ctx.strokeText(p.short, w.x, w.y);
       ctx.fillStyle = gold ? "#5a3f00" : "#3b3226";
       ctx.fillText(p.short, w.x, w.y);
+    }
+  }
+
+  function ease(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function drawRays(f) {
+    const g = f.group;
+    if (!g || g.dead) return;
+    const t = (now - f.t0) / f.dur;
+    const a = t < 0.15 ? t / 0.15 : t > 0.75 ? (1 - t) / 0.25 : 1;
+    const { x, y } = g.body.position;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(now / 1400);
+    ctx.globalAlpha = 0.5 * a;
+    for (let i = 0; i < 14; i++) {
+      ctx.rotate((Math.PI * 2) / 14);
+      const gr = ctx.createLinearGradient(0, 0, 420, 0);
+      gr.addColorStop(0, "rgba(247,211,92,.9)");
+      gr.addColorStop(1, "rgba(247,211,92,0)");
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(420, -26);
+      ctx.lineTo(420, 26);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawFx(f) {
+    const t = Math.min(1, Math.max(0, (now - f.t0) / f.dur));
+    if (now < f.t0) return;
+    if (f.type === "ring") {
+      const r = f.r0 + (f.r1 - f.r0) * ease(t);
+      ctx.save();
+      ctx.globalAlpha = (1 - t) * 0.9;
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 6 * (1 - t) + 1;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (f.type === "text") {
+      ctx.save();
+      ctx.globalAlpha = t < 0.7 ? 1 : (1 - t) / 0.3;
+      const pop = t < 0.15 ? 0.6 + (t / 0.15) * 0.5 : 1.1 - Math.min(0.1, (t - 0.15));
+      ctx.translate(f.x, f.y - 36 * ease(t));
+      ctx.scale(pop, pop);
+      ctx.font = `800 ${f.size}px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeText(f.text, 0, 0);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, 0, 0);
+      ctx.restore();
+    } else if (f.type === "banner") {
+      const inT = Math.min(1, t / 0.14), outT = t > 0.82 ? (t - 0.82) / 0.18 : 0;
+      const y = H * 0.36;
+      const hgt = f.big ? 120 : 86;
+      ctx.save();
+      ctx.globalAlpha = 1 - outT;
+      // band
+      ctx.fillStyle = f.color;
+      const bw = W * ease(inT);
+      ctx.fillRect(W / 2 - bw / 2, y - hgt / 2, bw, hgt);
+      ctx.fillStyle = "rgba(255,255,255,.18)";
+      ctx.fillRect(W / 2 - bw / 2, y - hgt / 2, bw, 6);
+      ctx.fillRect(W / 2 - bw / 2, y + hgt / 2 - 6, bw, 6);
+      // text
+      const sc = inT < 1 ? 1.6 - 0.6 * ease(inT) : 1 + 0.03 * Math.sin(now / 120);
+      ctx.translate(W / 2 + outT * 60, y);
+      ctx.scale(sc, sc);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `800 ${f.big ? 38 : 30}px ${FONT}`;
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = "rgba(59,50,38,.35)";
+      ctx.strokeText(f.text, 0, f.sub ? -12 : 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(f.text, 0, f.sub ? -12 : 0);
+      if (f.sub) {
+        ctx.font = `800 ${f.big ? 16 : 15}px ${FONT}`;
+        ctx.fillStyle = "rgba(255,255,255,.95)";
+        ctx.fillText(f.sub, 0, f.big ? 30 : 24);
+      }
+      ctx.restore();
+    } else if (f.type === "flash") {
+      ctx.save();
+      ctx.globalAlpha = (1 - t) * 0.85;
+      ctx.fillStyle = f.color;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
     }
   }
 
@@ -571,14 +789,17 @@
     ctx.clearRect(0, 0, W, H);
     if (shake) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake * 0.5);
     drawBox();
+    for (const f of fx) if (f.type === "rays") drawRays(f);
 
-    // groups
     const hintId = MODES[mode].hint && current && !ended ? current.id : null;
     for (const g of groups) {
       ctx.save();
-      const hinted = hintId != null && [...g.members].some((id) => PREFS[hintId].adjSet.has(id));
-      // soft shadow (かんたんモード: くっつけるかたまりを光らせる)
-      if (hinted) {
+      const hinted = hintId != null && [...g.members].some((id) => ST.pieces[hintId].adjSet.has(id));
+      if (now < g.glowUntil) {
+        ctx.shadowColor = g.glowColor;
+        ctx.shadowBlur = 26 + 12 * Math.sin(now / 110);
+        ctx.shadowOffsetY = 0;
+      } else if (hinted) {
         ctx.shadowColor = "rgba(255,190,40,.95)";
         ctx.shadowBlur = 14 + 8 * Math.sin(now / 180);
         ctx.shadowOffsetY = 0;
@@ -588,7 +809,7 @@
         ctx.shadowOffsetY = g.gold ? 0 : 2;
       }
       groupTransform(g);
-      drawGroupShapes(ctx, g.members, g.geom, g.gold);
+      drawGroupShapes(ctx, g.members, g.geom, g.gold, 1, ST, g.flash);
       ctx.restore();
     }
     for (const g of groups) {
@@ -600,7 +821,6 @@
       }, g.gold);
     }
 
-    // hanging piece + guide
     if (current && running && !ended) {
       const { geom } = current.bb;
       const ready = now >= canDropAt;
@@ -625,15 +845,23 @@
       }), false);
     }
 
-    // particles
     for (const p of particles) {
-      ctx.globalAlpha = Math.max(0, p.life / p.max);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, p.life / p.max * 1.5));
       ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.translate(p.x, p.y);
+      if (p.conf) {
+        ctx.rotate(p.rot);
+        ctx.scale(1, Math.cos(p.rot * 1.7));
+        ctx.fillRect(-p.r, -p.r * 0.5, p.r * 2, p.r);
+      } else {
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
-    ctx.globalAlpha = 1;
+    for (const f of fx) if (f.type !== "rays") drawFx(f);
   }
 
   function drawNext() {
@@ -641,14 +869,9 @@
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
     const id = queue[0];
-    ui.nextName.textContent = id ? PREFS[id].short : "—";
+    ui.nextName.textContent = id ? ST.pieces[id].short : "—";
     if (!id) return;
-    const p = PREFS[id];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (let i = 0; i < p.poly.length; i += 2) {
-      minX = Math.min(minX, p.poly[i]); maxX = Math.max(maxX, p.poly[i]);
-      minY = Math.min(minY, p.poly[i + 1]); maxY = Math.max(maxY, p.poly[i + 1]);
-    }
+    const { minX, minY, maxX, maxY } = ST.pieces[id].bbox;
     const size = nextCanvas.width;
     const k = (size * 0.84) / Math.max(maxX - minX, maxY - minY);
     c.translate(size / 2, size / 2);
@@ -658,15 +881,26 @@
   }
 
   // ---------- effects ----------
-  function burst(x, y, n, gold) {
-    const count = Math.min(40, 8 + n * 2);
+  function burst(x, y, n, gold, color) {
+    const count = Math.min(46, 12 + n * 2);
+    const cols = gold ? ["#f7d35c", "#e8b931", "#fff3c4"] : [color || "#f5ae62", shade(color || "#f5ae62", 0.25), "#ffffff", "#f7d35c"];
     for (let i = 0; i < count; i++) {
-      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5;
+      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 6;
       const max = 500 + Math.random() * 500;
       particles.push({
-        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2,
-        r: 2 + Math.random() * 3, life: max, max,
-        color: gold ? ["#f7d35c", "#e8b931", "#fff3c4"][i % 3] : ["#f5ae62", "#f29abf", "#86cfb0", "#7fb7e8"][i % 4],
+        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 0.25, drag: 0.98, rot: 0, vr: 0,
+        r: 2 + Math.random() * 3.5, life: max, max, color: cols[i % cols.length],
+      });
+    }
+  }
+  function confetti(n, cols) {
+    for (let i = 0; i < n; i++) {
+      const max = 2200 + Math.random() * 1200;
+      particles.push({
+        x: BOX_L + Math.random() * (BOX_R - BOX_L), y: -10 - Math.random() * 120,
+        vx: (Math.random() - 0.5) * 2.4, vy: 1.5 + Math.random() * 2.5, g: 0.04, drag: 0.995,
+        rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
+        r: 3.5 + Math.random() * 3.5, life: max, max, color: cols[i % cols.length], conf: true,
       });
     }
   }
@@ -677,7 +911,7 @@
     ui.toast.classList.toggle("gold", !!gold);
     ui.toast.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1500);
+    toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1800);
   }
 
   function vibrate(p) {
@@ -695,18 +929,10 @@
   function shade(hex, amt) {
     const n = parseInt(hex.slice(1), 16);
     let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
-    r = Math.round(r * (1 + amt)); g = Math.round(g * (1 + amt)); b = Math.round(b * (1 + amt));
+    const f = (v) => Math.round(amt >= 0 ? v + (255 - v) * amt : v * (1 + amt));
+    r = f(r); g = f(g); b = f(b);
     const cl = (v) => Math.max(0, Math.min(255, v));
-    return `rgb(${cl(r)},${cl(g)},${cl(b)})`;
-  }
-  function roundRect(c, x, y, w, h, r) {
-    c.beginPath();
-    c.moveTo(x + r, y);
-    c.arcTo(x + w, y, x + w, y + h, r);
-    c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r);
-    c.arcTo(x, y, x + w, y, r);
-    c.closePath();
+    return `#${[cl(r), cl(g), cl(b)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
   }
 
   // ---------- input ----------
@@ -731,7 +957,7 @@
   });
   canvas.addEventListener("pointercancel", () => { pointerDown = false; });
   window.addEventListener("keydown", (e) => {
-    if (!running) return;
+    if (!running || e.target.closest("input")) return;
     if (e.key === "ArrowLeft") aimX = clampAim(aimX - 12);
     if (e.key === "ArrowRight") aimX = clampAim(aimX + 12);
     if (e.key === " " || e.key === "ArrowDown") { e.preventDefault(); drop(); }
@@ -739,20 +965,14 @@
   });
 
   ui.shuffleBtn.addEventListener("click", doShuffle);
-  $("startBtn").addEventListener("click", () => {
-    ui.start.classList.add("hidden");
-    newGame("normal");
-  });
-  $("startEasyBtn").addEventListener("click", () => {
-    ui.start.classList.add("hidden");
-    newGame("easy");
-  });
+  $("startBtn").addEventListener("click", () => newGame("normal"));
+  $("startEasyBtn").addEventListener("click", () => newGame("easy"));
   const toTitle = () => {
     running = false; ended = true; engine = null; groups = []; current = null; hooks = null;
-    ui.menu.classList.add("hidden");
-    ui.result.classList.add("hidden");
+    ST = STAGES.japan; fx = []; particles = [];
+    [ui.menu, ui.result, ui.clear].forEach((el) => el.classList.add("hidden"));
     ui.start.classList.remove("hidden");
-    score = 0; queue = ALL_IDS.slice(); updateHud();
+    score = 0; queue = ST.ids.slice(); ui.stageTag.textContent = "日本"; updateHud();
   };
   $("titleBtn").addEventListener("click", toTitle);
   $("resultTitleBtn").addEventListener("click", toTitle);
@@ -766,14 +986,8 @@
     paused = false;
     ui.menu.classList.add("hidden");
   });
-  $("restartBtn").addEventListener("click", () => {
-    ui.menu.classList.add("hidden");
-    newGame();
-  });
-  $("againBtn").addEventListener("click", () => {
-    ui.result.classList.add("hidden");
-    newGame();
-  });
+  $("restartBtn").addEventListener("click", () => newGame());
+  $("againBtn").addEventListener("click", () => newGame());
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && running && !ended && !hooks) { paused = true; ui.menu.classList.remove("hidden"); }
   });
@@ -784,30 +998,37 @@
   function frame(t) {
     const dt = Math.min(100, t - last);
     last = t;
-    if (engine && !paused && (running || completeAt)) {
+    if (engine && !paused && (running || completeAt) && !ended) {
       acc += dt;
       let n = 0;
       while (acc >= STEP && n < 4) { now += STEP; update(STEP); acc -= STEP; n++; }
       if (n === 4) acc = 0;
+    } else if (engine && ended) {
+      // 結果画面の裏でもエフェクトだけは動かす
+      now += dt;
+      for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += p.g; p.rot += p.vr; p.life -= dt; }
+      particles = particles.filter((p) => p.life > 0);
+      fx = fx.filter((f) => now < f.t0 + f.dur);
     }
     if (engine) render();
     else renderIdle(t);
     requestAnimationFrame(frame);
   }
 
-  // title background: the whole Japan in gold, gently bobbing
+  // title background: the whole Japan, gently bobbing
   function renderIdle(t) {
     const s = viewScale * dpr;
+    const J = STAGES.japan;
     ctx.setTransform(s, 0, 0, s, 0, 0);
     ctx.clearRect(0, 0, W, H);
     drawBox();
     ctx.save();
-    ctx.translate(W / 2, (LINE_Y + FLOOR) / 2 + Math.sin(t / 700) * 4);
-    ctx.scale(S_TOTAL, S_TOTAL);
-    ctx.translate(-EXT_W / 2, -EXT_H / 2);
+    ctx.translate(W / 2, (150 + FLOOR) / 2 + Math.sin(t / 700) * 4);
+    ctx.scale(J.sTotal, J.sTotal);
+    ctx.translate(-J.ew / 2, -J.eh / 2);
     ctx.shadowColor = "rgba(232,185,49,.6)";
     ctx.shadowBlur = 20;
-    drawGroupShapes(ctx, ALL_IDS, { s: S_TOTAL }, false);
+    drawGroupShapes(ctx, J.ids, { s: J.sTotal }, false, 1, J);
     ctx.restore();
   }
 
@@ -815,13 +1036,15 @@
   resize();
   requestAnimationFrame(frame);
 
-  // ---------- public API (used by net.js for 対戦) ----------
+  // ---------- public API (net.js: 対戦 / ランキング) ----------
   function snapshot() {
     const r = (v) => Math.round(v * 10) / 10;
     return groups.map((g) => [[...g.members], r(g.body.position.x), r(g.body.position.y), Math.round(g.body.angle * 100) / 100, r(g.local.x), r(g.local.y)]);
   }
-  // draw someone's box (from snapshot) into a small canvas
+  // 相手の箱（スナップショット）を小さなキャンバスに描く（対戦は日本ステージのみ）
   function drawBoard(cv, snap, opts = {}) {
+    const J = STAGES.japan;
+    const M = MODES[opts.mode || "normal"] || MODES.normal;
     const c = cv.getContext("2d");
     const k = cv.width / W;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -831,32 +1054,26 @@
     c.fillStyle = "#c9a46b"; c.fillRect(0, 0, WALL, H); c.fillRect(W - WALL, 0, WALL, H); c.fillRect(0, FLOOR, W, WALL);
     c.strokeStyle = opts.lineDown ? "#e85d4a" : "rgba(156,122,69,.6)";
     c.lineWidth = 4; c.setLineDash([14, 10]);
-    const ly = (MODES[opts.mode || "normal"] || MODES.normal).lineY + (opts.lineDown ? LINE_DROP : 0);
+    const ly = M.lineY + (opts.lineDown ? LINE_DROP : 0);
     c.beginPath(); c.moveTo(BOX_L, ly); c.lineTo(BOX_R, ly); c.stroke(); c.setLineDash([]);
-    const exp0 = EXP; EXP = (MODES[opts.mode || "normal"] || MODES.normal).exp;
     for (const [members, x, y, a, lx, ly2] of snap || []) {
-      const geom = makeGroupGeom(members);
+      const geom = makeGroupGeom(members, J, M.exp);
       c.save();
       c.translate(x, y); c.rotate(a); c.translate(-lx, -ly2);
       c.scale(geom.s, geom.s); c.translate(-geom.ox, -geom.oy);
-      drawGroupShapes(c, members, geom, members.length === ALL_IDS.length);
+      drawGroupShapes(c, members, geom, members.length === J.ids.length, 1, J);
       c.restore();
     }
-    EXP = exp0;
   }
   window.PrefGame = {
-    start(m, seed, h) {
-      ui.start.classList.add("hidden"); ui.menu.classList.add("hidden"); ui.result.classList.add("hidden");
-      newGame(m, { seed, hooks: h });
-    },
+    start(m, seed, h) { newGame(m, { seed, hooks: h, stage: "japan" }); },
     stop() { toTitle(); },
     leaveToTitle: () => toTitle(),
     snapshot,
     drawBoard,
-    attack(ms, from) {
+    attack(ms) {
       if (!running || ended) return;
       lineDownUntil = Math.max(lineDownUntil, now) + ms;
-      lineDownFrom = from;
       shake = 10;
       vibrate([30, 40, 30]);
     },
@@ -867,13 +1084,34 @@
     MODES,
   };
 
-  // expose for debugging / tests
+  // debugging / tests
   window.__prefpack = {
-    get state() { return { multi: !!hooks, mode, score, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone] }; },
+    get state() { return { multi: !!hooks, mode, stage: ST.key, lap, score, parts: { ...parts }, groups: groups.length, queue: queue.length, current: current && current.id, ended, shufflesUsed, regionsDone: [...regionsDone], cleared: [...cleared], fx: fx.length, particles: particles.length }; },
     newGame, drop, doShuffle, setAim: (x) => { aimX = clampAim(x); },
     fastForward(ms) { if (!engine) return; const n = Math.round(ms / STEP); for (let i = 0; i < n && !ended; i++) { now += STEP; update(STEP); } },
     skipCooldown() { canDropAt = 0; shuffleReadyAt = 0; if (!current) nextPiece(); },
     forceEnd(c) { endGame(!!c); },
-    S_TOTAL, scaleFor, TOTAL_AREA,
+    // テスト用: いま箱にあるかたまりを全部まとめる（完成演出の確認）
+    mergeAll() {
+      while (queue.length || current) { if (!current) nextPiece(); const g = createGroupBody([current.id], W / 2, 400); Composite.add(world, g.body); groups.push(g); current = null; }
+      while (groups.length > 1) {
+        const a = groups[0];
+        const b = groups.slice(1).find((x) => adjacent(a, x));
+        if (!b) break;
+        merge(a, b);
+      }
+    },
+    mergeRegion(ri) {
+      const ids = ST.regionMembers[ri];
+      for (const id of ids) { queue = queue.filter((q) => q !== id); if (current && current.id === id) current = null; const g = createGroupBody([id], W / 2, 400); Composite.add(world, g.body); groups.push(g); }
+      let mine = groups.filter((g) => [...g.members].every((m) => ids.includes(m)));
+      while (mine.length > 1) {
+        const a = mine[0], b = mine.slice(1).find((x) => adjacent(a, x));
+        if (!b) break;
+        merge(a, b);
+        mine = groups.filter((g) => [...g.members].every((m) => ids.includes(m)));
+      }
+    },
+    STAGES,
   };
 })();
