@@ -1,0 +1,17 @@
+{
+  "name": "都道府県ゲーム",
+  "short_name": "都道府県ゲーム",
+  "description": "都道府県を箱に落として詰めるパズル。隣り合う県がくっついて、最後は日本列島に。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6efe2",
+  "theme_color": "#f6efe2",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,4 +1,4 @@
-# つなげて！都道府県パック
+# 都道府県ゲーム
 
 都道府県を箱に落として詰めるパズルゲーム。
 地図で隣り合う県同士がふれるとくっついて地方になり、47 都道府県ぜんぶつなぐと日本列島が完成します。
@@ -30,6 +30,8 @@
 2. Source を **Deploy from a branch**、Branch を **main / (root)** にして Save
 3. 数分後に `https://junnn665.github.io/prefpack/` で遊べる
 
+iPhone は Safari の共有ボタン →「ホーム画面に追加」、Android は Chrome のメニュー →「ホーム画面に追加」で、アイコン付きのアプリのように全画面で遊べます。
+
 ビルド不要の静的ファイルだけで動きます。ローカルで試すなら:
 
 ```sh
@@ -46,6 +48,8 @@ python3 -m http.server 8000
 | `js/prefs.js` | 都道府県の形・隣接データ（自動生成） |
 | `vendor/matter.min.js` | 物理エンジン [Matter.js](https://brm.io/matter-js/)（MIT） |
 | `tools/build_prefs.py` | 地図データから `js/prefs.js` を作るスクリプト |
+| `icons/` / `manifest.webmanifest` | ホーム画面用アイコン（iPhone・Android）とアプリ設定 |
+| `tools/build_icon.py` | 県の形データからアイコン SVG を作るスクリプト |
 
 ### 調整ポイント（`js/game.js` 冒頭）
 
