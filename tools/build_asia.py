@@ -88,6 +88,17 @@ def hull(pts):
     return lo[:-1] + up[:-1]
 
 
+def dedupe(pts, tol=0.5):
+    out = []
+    for q in pts:
+        if out and math.hypot(out[-1][0] - q[0], out[-1][1] - q[1]) < tol:
+            continue
+        out.append(q)
+    while len(out) > 3 and math.hypot(out[0][0] - out[-1][0], out[0][1] - out[-1][1]) < tol:
+        out.pop()
+    return out
+
+
 def reduce_hull(h, n):
     h = h[:]
     while len(h) > n:
@@ -142,7 +153,7 @@ for pc in pieces:
         s = simplify(r, eps)
         if len(s) < 3: continue
         polys.append([c for p in s for c in (round(p[0], 1), round(p[1], 1))])
-        h = reduce_hull(hull(r), 14)
+        h = dedupe(reduce_hull(dedupe(hull(r)), 14))
         hulls.append([c for p in h for c in (round(p[0], 1), round(p[1], 1))])
     cx, cy = centroid(rings[0])
     short, region = COUNTRIES[pc["key"]]

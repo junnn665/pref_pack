@@ -81,6 +81,17 @@ def hull(pts):
     return lo[:-1] + up[:-1]
 
 
+def dedupe(pts, tol=0.5):
+    out = []
+    for q in pts:
+        if out and math.hypot(out[-1][0] - q[0], out[-1][1] - q[1]) < tol:
+            continue
+        out.append(q)
+    while len(out) > 3 and math.hypot(out[0][0] - out[-1][0], out[0][1] - out[-1][1]) < tol:
+        out.pop()
+    return out
+
+
 def reduce_hull(h, maxn):
     h = h[:]
     while len(h) > maxn:
@@ -162,7 +173,7 @@ for pid in sorted(prefs):
     a = abs(area(ring))
     eps = max(0.6, math.sqrt(a) * 0.012)
     simp = simplify_ring(ring, eps)
-    h = reduce_hull(hull(ring), 18)
+    h = dedupe(reduce_hull(dedupe(hull(ring)), 18))
     cx, cy = centroid(ring)
     name = v["name"]
     short = name if name == "北海道" else name[:-1]

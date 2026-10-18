@@ -54,11 +54,18 @@
         }
         path.closePath();
       }
+      // 当たり判定の形。ほぼ同じ点が続くと物理エンジンが壊れて床をすり抜けるので取り除く
       const hullPts = hulls.map((h) => {
         const pts = [];
-        for (let i = 0; i < h.length; i += 2) pts.push({ x: h[i], y: h[i + 1] });
+        for (let i = 0; i < h.length; i += 2) {
+          const q = { x: h[i], y: h[i + 1] };
+          const prev = pts[pts.length - 1];
+          if (prev && Math.hypot(prev.x - q.x, prev.y - q.y) < 0.5) continue;
+          pts.push(q);
+        }
+        while (pts.length > 3 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 0.5) pts.pop();
         return pts;
-      });
+      }).filter((h) => h.length >= 3);
       pieces[p.id] = {
         ...p, path, hullPts, adjSet: new Set(p.adj),
         color: colors[p.region], stroke: shade(colors[p.region], -0.28),
@@ -547,6 +554,18 @@
   function update(dt) {
     Engine.update(engine, dt);
     processMerges();
+
+    // 念のため: 箱の外に出てしまったかたまりは上から戻す
+    for (const g of groups) {
+      const p = g.body.position;
+      if (p.y > H + 120 || p.x < -150 || p.x > W + 150) {
+        Body.setPosition(g.body, { x: W / 2, y: HANG_Y });
+        Body.setVelocity(g.body, { x: 0, y: 0 });
+        Body.setAngularVelocity(g.body, 0);
+        keepInside(g.body);
+        g.droppedAt = now;
+      }
+    }
 
     let danger = false;
     for (const g of groups) {
@@ -1161,5 +1180,7 @@
       }
     },
     STAGES,
+    groupsInfo: () => groups.map((g) => ({ m: [...g.members], x: g.body.position.x, y: g.body.position.y })),
+    queueIds: () => queue.slice(),
   };
 })();
