@@ -23,6 +23,8 @@
   const LIVE_EVERY = 1000;
   const ROOM_TTL = 24 * 60 * 60 * 1000;
   const REGIONS = window.PREF_DATA.regions;
+  const STAGE_NAMES = { japan: "日本", asia: "アジア", both: "日本→アジア" };
+  const STAGE_ORDER = ["japan", "asia", "both"];
 
   const $ = (id) => document.getElementById(id);
   const G = () => window.PrefGame;
@@ -140,6 +142,7 @@
   let liveTimer = null;
   let countdownTimer = null;
   let createMode = "normal";
+  let createStage = "japan";
 
   const me = () => (R && R.players && R.players[PID]) || null;
   const isHost = () => !!R && R.host === PID;
@@ -193,7 +196,7 @@
         const c = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
         const t = NET.now();
         const room = {
-          game: "pref", created: t, host: PID, mode: createMode, seed: Math.random().toString(36).slice(2, 10),
+          game: "pref", created: t, host: PID, mode: createMode, stage: createStage, seed: Math.random().toString(36).slice(2, 10),
           state: "lobby", round: 0,
           players: { [PID]: { name, joined: t, online: true } },
         };
@@ -287,8 +290,11 @@
       } catch { $("mpQr").innerHTML = ""; }
     }
     const modeName = (G().MODES[R.mode] || G().MODES.normal).name;
-    $("mpLobbyMode").textContent = `モード：${modeName}` + (isHost() && R.state === "lobby" ? "（タップで切りかえ）" : "");
-    $("mpLobbyMode").style.cursor = isHost() && R.state === "lobby" ? "pointer" : "";
+    const canEdit = isHost() && R.state === "lobby";
+    $("mpLobbyMode").textContent = `モード：${modeName}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpLobbyMode").style.cursor = canEdit ? "pointer" : "";
+    $("mpLobbyStage").textContent = `ステージ：${STAGE_NAMES[R.stage || "japan"]}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpLobbyStage").style.cursor = canEdit ? "pointer" : "";
 
     const ps = Object.entries(R.players || {}).sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0));
     $("mpPlayers").innerHTML = ps.map(([id, p]) => {
@@ -317,6 +323,17 @@
     if (!isHost() || !R || R.state !== "lobby") return;
     NET.set(`${KEY(code)}/mode`, R.mode === "easy" ? "normal" : "easy").catch(() => {});
   });
+  $("mpLobbyStage").addEventListener("click", () => {
+    if (!isHost() || !R || R.state !== "lobby") return;
+    const i = STAGE_ORDER.indexOf(R.stage || "japan");
+    NET.set(`${KEY(code)}/stage`, STAGE_ORDER[(i + 1) % STAGE_ORDER.length]).catch(() => {});
+  });
+  $("mpStageSeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-stage]");
+    if (!b) return;
+    createStage = b.dataset.stage;
+    $("mpStageSeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  });
 
   $("mpShare").addEventListener("click", async () => {
     const url = inviteUrl();
@@ -342,7 +359,8 @@
         up[`players/${id}/round`] = round;
         up[`players/${id}/status`] = "playing";
         up[`players/${id}/score`] = 0;
-        up[`players/${id}/left`] = 47;
+        up[`players/${id}/left`] = (R.stage || "japan") === "asia" ? 46 : 47;
+        up[`players/${id}/stage`] = (R.stage || "japan") === "asia" ? "asia" : "japan";
         up[`players/${id}/board`] = null;
         up[`players/${id}/lineDown`] = false;
         up[`players/${id}/finishAt`] = null;
@@ -364,7 +382,7 @@
     $("rivals").classList.remove("hidden");
     renderRivals();
     window.dispatchEvent(new Event("resize"));
-    const mode = R.mode, seed = `${R.seed}:${R.round}`, startAt = R.startAt || 0;
+    const mode = R.mode, stage = R.stage || "japan", seed = `${R.seed}:${R.round}`, startAt = R.startAt || 0;
     const cd = $("countdown");
     clearInterval(countdownTimer);
     let lastShown = null;
@@ -375,7 +393,7 @@
         cd.textContent = "スタート！";
         cd.style.fontSize = "56px";
         setTimeout(() => cd.classList.add("hidden"), 600);
-        G().start(mode, seed, hooks);
+        G().start(mode, seed, hooks, stage);
         clearInterval(liveTimer);
         liveTimer = setInterval(pushLive, LIVE_EVERY);
         pushLive();
@@ -396,11 +414,12 @@
   }
 
   const hooks = {
-    onRegion(ri) {
+    onRegion(ri, rname) {
       if (!code) return;
       const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      NET.set(`${KEY(code)}/ev/${id}`, { from: PID, name: myName() || "だれか", type: "line", region: ri, round: myRound, t: NET.now() }).catch(() => {});
+      NET.set(`${KEY(code)}/ev/${id}`, { from: PID, name: myName() || "だれか", type: "line", region: ri, rname: rname || "", round: myRound, t: NET.now() }).catch(() => {});
     },
+    onStage() { pushLive(); },
     onEnd(cleared) {
       finished = true;
       clearInterval(liveTimer);
@@ -416,6 +435,7 @@
       score: info.score,
       left: info.left,
       board: JSON.stringify(G().snapshot()),
+      stage: info.stage,
       lineDown: !!info.lineDown,
     };
     if (finalStatus) { up.status = finalStatus; up.finishAt = NET.now(); }
@@ -429,7 +449,7 @@
       seenEv.add(id);
       if (!e || e.from === PID || e.round !== myRound || finished) continue;
       G().attack(ATTACK_MS, e.name);
-      G().toast(`${e.name}さんが${REGIONS[e.region] || ""}をそろえた！ 線が下がる！`, false);
+      G().toast(`${e.name}さんが${e.rname || REGIONS[e.region] || ""}をそろえた！ 線が下がる！`, false);
       const card = $("rivals").querySelector(`[data-id="${CSS.escape(e.from)}"]`);
       if (card) { card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 1500); }
     }
@@ -439,7 +459,7 @@
     if (p.online === false && p.status === "playing") return "通信切れ";
     if (p.status === "clear") return "完成！";
     if (p.status === "over") return "ゲームオーバー";
-    return `のこり${p.left == null ? 47 : p.left}`;
+    return `${p.stage === "asia" && (R.stage || "japan") === "both" ? "アジア・" : ""}のこり${p.left == null ? 47 : p.left}`;
   }
 
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -453,7 +473,7 @@
   function drawBoardFor(cv, p) {
     let snap = [];
     try { snap = p.board ? JSON.parse(p.board) : []; } catch { /* ignore */ }
-    G().drawBoard(cv, snap, { mode: R.mode, lineDown: !!p.lineDown });
+    G().drawBoard(cv, snap, { mode: R.mode, lineDown: !!p.lineDown, stage: p.stage || (R.stage === "asia" ? "asia" : "japan") });
   }
 
   function renderRivals() {
@@ -505,7 +525,7 @@
 
     if (allDone) {
       $("mpResultTitle").textContent = list.length > 1 ? (myRank === 1 ? "優勝！" : `${myRank}位`) : (mine.status === "clear" ? "日本列島 完成！" : "結果");
-      $("mpResultSub").textContent = `${list.length}人で対戦・${(G().MODES[R.mode] || {}).name || ""}モード`;
+      $("mpResultSub").textContent = `${list.length}人で対戦・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}`;
     } else {
       $("mpResultTitle").textContent = mine.status === "clear" ? "日本列島 完成！" : "ゲームオーバー";
       $("mpResultSub").textContent = `まだ遊んでいる人がいます…（いまのところ ${myRank}位）`;

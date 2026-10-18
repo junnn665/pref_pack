@@ -444,3 +444,6 @@ body.multi .solo-only { display: none; }
 .asia-box .lock-note { display: none; }
 .asia-box.locked .lock-note { display: block; }
 .asia-box.locked .btn { opacity: .4; }
+.seg.seg3 { grid-template-columns: 1fr 1fr 1.3fr; }
+.seg.seg3 button { padding: 10px 4px; font-size: 14px; }
+.lobby-mode + .lobby-mode { margin-top: -6px; }

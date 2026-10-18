@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261018-14">
+  <link rel="stylesheet" href="style.css?v=20261018-15">
 </head>
 <body>
   <div id="app">
@@ -67,7 +67,8 @@
             <li>最後のピースを落としたら<b>60秒以内</b>に完成させよう（アジアは90秒）</li>
             <li>47 都道府県ぜんぶつないで<b>日本列島</b>を完成させよう</li>
             <li>日本列島が完成したら、そのまま<b>アジア大陸</b>へ。アジア大陸まで完成させたら<b>全クリア</b>！スコアは合計されます</li>
-            <li><b>対戦</b>：同じ順番で県が出る。先に日本列島を作った人の勝ち。地方をそろえると、相手のあふれ線が 10 秒下がる</li>
+            <li>1ピースの持ち時間は 8 秒（かんたんは 12 秒）。過ぎるとその場で自動で落ちる</li>
+            <li><b>対戦</b>：同じ順番で県が出る。ステージは「日本」「アジア」「日本→アジア」から選べる。先に完成させた人の勝ち。地方をそろえると、相手のあふれ線が 10 秒下がる</li>
           </ul>
         </details>
         <p class="section-label">ひとりで</p>
@@ -120,6 +121,11 @@
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
         </div>
+        <div class="seg seg3" id="mpStageSeg">
+          <button class="on" data-stage="japan">日本</button>
+          <button data-stage="asia">アジア</button>
+          <button data-stage="both">日本→アジア</button>
+        </div>
         <button class="btn primary" id="mpCreateGo">作る</button>
         <button class="btn" data-back>もどる</button>
         <p class="mp-msg" id="mpCreateMsg"></p>
@@ -151,6 +157,7 @@
           </div>
         </div>
         <p class="lobby-mode" id="mpLobbyMode"></p>
+        <p class="lobby-mode" id="mpLobbyStage"></p>
         <ul class="players" id="mpPlayers"></ul>
         <button class="btn primary" id="mpStart">スタート</button>
         <p class="mp-msg" id="mpLobbyMsg"></p>
@@ -204,11 +211,11 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261018-14"></script>
-  <script src="js/prefs.js?v=20261018-14"></script>
-  <script src="js/asia.js?v=20261018-14"></script>
-  <script src="js/game.js?v=20261018-14"></script>
-  <script src="lib/qrcode.min.js?v=20261018-14"></script>
-  <script src="js/net.js?v=20261018-14"></script>
+  <script src="vendor/matter.min.js?v=20261018-15"></script>
+  <script src="js/prefs.js?v=20261018-15"></script>
+  <script src="js/asia.js?v=20261018-15"></script>
+  <script src="js/game.js?v=20261018-15"></script>
+  <script src="lib/qrcode.min.js?v=20261018-15"></script>
+  <script src="js/net.js?v=20261018-15"></script>
 </body>
 </html>

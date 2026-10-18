@@ -27,9 +27,10 @@
   //  overLimit: ラインを超えてからゲームオーバーまでの猶予(ms)
   //  neighbor:  次のピースを「箱にあるもののおとなり」にする確率
   //  hint:      今落とすピースとくっつけるかたまりを光らせる
+  //  dropLimit: 1ピースを落とすまでの持ち時間(ms)。過ぎると今の位置で自動で落ちる
   const MODES = {
-    normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false },
-    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.4, hint: true },
+    normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000 },
+    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.4, hint: true, dropLimit: 12000 },
   };
   let mode = "normal";
   let LINE_Y = MODES.normal.lineY;
@@ -156,6 +157,9 @@
   let fx = [];
   let now = 0;
   let completeAt = 0;
+  let pieceShownAt = 0;      // いまのピースが出た時刻（落とすまでの持ち時間）
+  let chain = false;         // 対戦「日本→アジア」: 日本列島のあとアジア大陸へ続ける
+  let seedBase = null;
   let finalStart = 0;        // 最後のピースを落とした時刻（ここから制限時間スタート）
   let timeUp = false;
   const finalLeft = () => (finalStart ? ST.finalTime * 1000 - (now - finalStart) : Infinity);
@@ -259,6 +263,8 @@
     EXP = M.exp + (ST.expAdd || 0);
     LINE_Y = M.lineY + LAP_LINE * Math.min(lap - 1, 3);
     OVER_LIMIT = M.overLimit;
+    seedBase = opts.seed || null;
+    chain = !!opts.chain;
     rand = opts.seed ? seeded(String(opts.seed)) : Math.random;
     hooks = opts.hooks || null;
     lineDownUntil = 0;
@@ -312,6 +318,7 @@
     if (!queue.length) { current = null; drawNext(); return; }
     const id = queue.shift();
     current = { id, bb: groupBoundsAt([id]) };
+    pieceShownAt = now;
     const nb = MODES[mode].neighbor;
     if (nb) arrangeNeighborNext(nb);
     aimX = clampAim(aimX);
@@ -472,7 +479,7 @@
         shake = Math.max(shake, 8);
         vibrate([20, 40, 30]);
       }
-      if (hooks && hooks.onRegion) hooks.onRegion(ri);
+      if (hooks && hooks.onRegion) hooks.onRegion(ri, ST.regionName(ST.regions[ri]));
     });
   }
 
@@ -495,6 +502,13 @@
     shake = 14;
     vibrate([40, 60, 40, 60, 120]);
     updateHud();
+    if (hooks && hooks.onStage) hooks.onStage(ST.key);
+    if (hooks && chain && ST.key === "japan") {
+      // 対戦「日本→アジア」: そのままアジア大陸へ（順番は全員同じ）
+      const h = hooks, sd = seedBase;
+      later(() => newGame(mode, { stage: "asia", keep: true, hooks: h, seed: `${sd}:asia` }), 3400);
+      return;
+    }
     if (hooks) { later(() => endGame(true), 2800); return; }
     if (ST.key === "japan") later(() => newGame(mode, { stage: "asia", lap, keep: true }), 3400);  // そのままアジア大陸へ
     else later(() => endGame(true), 3200);                                                       // 全クリア
@@ -584,6 +598,8 @@
     }
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
     if (overTimer > OVER_LIMIT && !completeAt) endGame(false);
+    // 持ち時間切れ → 今の位置で自動で落とす
+    if (current && !completeAt && now >= canDropAt && now - pieceShownAt > MODES[mode].dropLimit) drop();
     if (finalStart && !completeAt && !ended && finalLeft() <= 0) {
       timeUp = true;
       fx.push({ type: "banner", t0: now, dur: 1400, text: "タイムアップ", sub: "", color: "#3b3226" });
@@ -920,7 +936,34 @@
       ctx.restore();
     }
     drawFinalTimer();
+    drawDropTimer();
     for (const f of fx) if (f.type !== "rays") drawFx(f);
+  }
+
+  // 1ピースの持ち時間（箱の上のバー。残り3秒から赤く数字も出す）
+  function drawDropTimer() {
+    if (!current || !running || ended || completeAt) return;
+    const lim = MODES[mode].dropLimit;
+    const left = Math.max(0, lim - (now - pieceShownAt));
+    const r = left / lim;
+    const hurry = left < 3000;
+    ctx.save();
+    ctx.fillStyle = "rgba(156,122,69,.15)";
+    ctx.fillRect(BOX_L + 6, 6, BOX_R - BOX_L - 12, 5);
+    ctx.fillStyle = hurry ? "#e85d4a" : "#c9a46b";
+    ctx.fillRect(BOX_L + 6, 6, (BOX_R - BOX_L - 12) * r, 5);
+    if (hurry) {
+      ctx.font = `800 16px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#fff";
+      const y = HANG_Y + current.bb.minY - 12;
+      ctx.strokeText(`${Math.ceil(left / 1000)}`, aimX, Math.max(22, y));
+      ctx.fillStyle = "#e85d4a";
+      ctx.fillText(`${Math.ceil(left / 1000)}`, aimX, Math.max(22, y));
+    }
+    ctx.restore();
   }
 
   // 最後のピースのあとの残り時間（箱の上に大きく）
@@ -1136,23 +1179,23 @@
     const r = (v) => Math.round(v * 10) / 10;
     return groups.map((g) => [[...g.members], r(g.body.position.x), r(g.body.position.y), Math.round(g.body.angle * 100) / 100, r(g.local.x), r(g.local.y)]);
   }
-  // 相手の箱（スナップショット）を小さなキャンバスに描く（対戦は日本ステージのみ）
+  // 相手の箱（スナップショット）を小さなキャンバスに描く
   function drawBoard(cv, snap, opts = {}) {
-    const J = STAGES.japan;
+    const J = STAGES[opts.stage] || STAGES.japan;
     const M = MODES[opts.mode || "normal"] || MODES.normal;
     const c = cv.getContext("2d");
     const k = cv.width / W;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, cv.width, cv.height);
     c.setTransform(k, 0, 0, k, 0, 0);
-    c.fillStyle = "#fffaf1"; c.fillRect(BOX_L, 0, BOX_R - BOX_L, FLOOR);
+    c.fillStyle = J.key === "asia" ? "#f7fbff" : "#fffaf1"; c.fillRect(BOX_L, 0, BOX_R - BOX_L, FLOOR);
     c.fillStyle = "#c9a46b"; c.fillRect(0, 0, WALL, H); c.fillRect(W - WALL, 0, WALL, H); c.fillRect(0, FLOOR, W, WALL);
     c.strokeStyle = opts.lineDown ? "#e85d4a" : "rgba(156,122,69,.6)";
     c.lineWidth = 4; c.setLineDash([14, 10]);
     const ly = M.lineY + (opts.lineDown ? LINE_DROP : 0);
     c.beginPath(); c.moveTo(BOX_L, ly); c.lineTo(BOX_R, ly); c.stroke(); c.setLineDash([]);
     for (const [members, x, y, a, lx, ly2] of snap || []) {
-      const geom = makeGroupGeom(members, J, M.exp);
+      const geom = makeGroupGeom(members, J, M.exp + (J.expAdd || 0));
       c.save();
       c.translate(x, y); c.rotate(a); c.translate(-lx, -ly2);
       c.scale(geom.s, geom.s); c.translate(-geom.ox, -geom.oy);
@@ -1161,19 +1204,20 @@
     }
   }
   window.PrefGame = {
-    start(m, seed, h) { newGame(m, { seed, hooks: h, stage: "japan" }); },
+    // stage: "japan" | "asia" | "both"（日本→アジア）
+    start(m, seed, h, stage = "japan") { newGame(m, { seed, hooks: h, stage: stage === "asia" ? "asia" : "japan", chain: stage === "both" }); },
     stop() { toTitle(); },
     leaveToTitle: () => toTitle(),
     snapshot,
     drawBoard,
     attack(ms) {
       if (!running || ended) return;
-      lineDownUntil = Math.max(lineDownUntil, now) + ms;
+      lineDownUntil = Math.min(Math.max(lineDownUntil, now) + ms, now + 15000);  // 重なっても最大15秒
       shake = 10;
       vibrate([30, 40, 30]);
     },
     get info() {
-      return { running, ended, score, mode, left: groups.length + (current ? 1 : 0) + queue.length, lineDown: now < lineDownUntil, cleared: !!completeAt };
+      return { stage: ST.key, running, ended, score, mode, left: groups.length + (current ? 1 : 0) + queue.length, lineDown: now < lineDownUntil, cleared: !!completeAt };
     },
     toast,
     MODES,
