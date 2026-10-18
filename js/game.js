@@ -162,7 +162,8 @@
   let fx = [];
   let now = 0;
   let completeAt = 0;
-  let pieceShownAt = 0;      // いまのピースが出た時刻（落とすまでの持ち時間）
+  let pieceShownAt = 0;
+  let locked = false;        // 対戦で最下位確定 → 操作できない      // いまのピースが出た時刻（落とすまでの持ち時間）
   let chain = false;         // 対戦「日本→アジア」: 日本列島のあとアジア大陸へ続ける
   let seedBase = null;
   let finalStart = 0;        // 最後のピースを落とした時刻（ここから制限時間スタート）
@@ -273,6 +274,7 @@
     rand = opts.seed ? seeded(String(opts.seed)) : Math.random;
     hooks = opts.hooks || null;
     lineDownUntil = 0;
+    locked = false;
 
     engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
     engine.gravity.y = 1;
@@ -368,7 +370,7 @@
   }
 
   function drop() {
-    if (!running || paused || ended || !current || now < canDropAt) return;
+    if (!running || paused || ended || locked || !current || now < canDropAt) return;
     const g = createGroupBody([current.id], aimX, HANG_Y);
     Body.setPosition(g.body, { x: aimX + g.local.x, y: HANG_Y + g.local.y });
     keepInside(g.body);
@@ -540,7 +542,7 @@
 
   // ---------- shuffle ----------
   function doShuffle() {
-    if (!running || paused || ended || now < shuffleReadyAt) return;
+    if (!running || paused || ended || locked || now < shuffleReadyAt) return;
     shuffleReadyAt = now + SHUFFLE_COOLDOWN;
     shufflesUsed++;
     for (const g of groups) {
@@ -620,10 +622,10 @@
       if (g.body.bounds.min.y < curLine() && sp < 1.5) { danger = true; break; }
     }
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
-    if (overTimer > OVER_LIMIT && !completeAt) endGame(false);
+    if (overTimer > OVER_LIMIT && !completeAt && !locked) endGame(false);
     // 持ち時間切れ → 今の位置で自動で落とす
-    if (current && !completeAt && now >= canDropAt && now - pieceShownAt > MODES[mode].dropLimit) drop();
-    if (finalStart && !completeAt && !ended && finalLeft() <= 0) {
+    if (current && !completeAt && !locked && now >= canDropAt && now - pieceShownAt > MODES[mode].dropLimit) drop();
+    if (finalStart && !completeAt && !ended && !locked && finalLeft() <= 0) {
       timeUp = true;
       fx.push({ type: "banner", t0: now, dur: 1400, text: "タイムアップ", sub: "", color: "#3b3226" });
       endGame(false);
@@ -965,7 +967,7 @@
 
   // 1ピースの持ち時間（箱の上のバー。残り3秒から赤く数字も出す）
   function drawDropTimer() {
-    if (!current || !running || ended || completeAt) return;
+    if (!current || !running || ended || completeAt || locked) return;
     const lim = MODES[mode].dropLimit;
     const left = Math.max(0, lim - (now - pieceShownAt));
     const r = left / lim;
@@ -1233,6 +1235,17 @@
     leaveToTitle: () => toTitle(),
     snapshot,
     drawBoard,
+    // 対戦で最下位が確定したとき: GAME OVER を出して終わる
+    gameOver(reason) {
+      if (!running || ended || locked || completeAt) return;
+      locked = true;
+      current = null;
+      fx.push({ type: "flash", t0: now, dur: 500, color: "#3b3226" });
+      fx.push({ type: "banner", t0: now, dur: 2200, text: "GAME OVER", sub: reason || "", color: "#3b3226", big: true });
+      shake = 10;
+      vibrate([60, 40, 120]);
+      later(() => endGame(false), 2000);
+    },
     attack(ms) {
       if (!running || ended) return;
       lineDownUntil = Math.min(Math.max(lineDownUntil, now) + ms, now + 15000);  // 重なっても最大15秒

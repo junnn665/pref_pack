@@ -253,6 +253,7 @@
     if (v.state === "playing" && mine.round === v.round) {
       if (myRound !== v.round) startRound();
       handleEvents();
+      checkLastPlace();
       renderRivals();
       if (finished) renderResult();
     } else {
@@ -452,6 +453,17 @@
       G().toast(`${e.name}さんが${e.rname || REGIONS[e.region] || ""}をそろえた！ 線が下がる！`, false);
       const card = $("rivals").querySelector(`[data-id="${CSS.escape(e.from)}"]`);
       if (card) { card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 1500); }
+    }
+  }
+
+  // 最下位が確定したら GAME OVER（完成した人は完成していない人より必ず上なので、
+  // 自分以外がみんな完成したら、もう順位は上がらない）
+  function checkLastPlace() {
+    if (finished || myRound < 0 || !G().info.running) return;
+    const others = participants().filter((p) => p.id !== PID && p.online !== false);
+    if (!others.length) return;
+    if (others.every((p) => p.status === "clear")) {
+      G().gameOver(others.length === 1 ? `${others[0].name}さんが先に完成させた` : "みんなが先に完成させた");
     }
   }
 
