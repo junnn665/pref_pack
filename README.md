@@ -67,3 +67,8 @@ python3 tools/build_prefs.py japan.geojson js/prefs.js
 
 - 地図データ: 「国土数値情報（行政区域データ）」（国土交通省）を加工して作成（[dataofjapan/land](https://github.com/dataofjapan/land) 経由）
 - 物理エンジン: Matter.js © Liam Brummitt（MIT License）
+
+### 更新するとき
+
+`index.html` の `?v=...`（css / js の読み込み部分）を新しい値に変えてからプッシュしてください。
+ブラウザが古いファイルを使い続けて動かなくなるのを防げます。
