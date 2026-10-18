@@ -118,7 +118,7 @@
   }
 
   // ---------- screens ----------
-  const OVERLAYS = ["startScreen", "menuScreen", "resultScreen", "clearScreen", "rankScreen", "mpCreate", "mpJoin", "mpLobby", "mpResult"];
+  const OVERLAYS = ["startScreen", "menuScreen", "resultScreen", "rankScreen", "mpCreate", "mpJoin", "mpLobby", "mpResult"];
   function show(id) {
     OVERLAYS.forEach((o) => $(o).classList.toggle("hidden", o !== id));
   }

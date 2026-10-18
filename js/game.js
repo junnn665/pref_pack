@@ -1,6 +1,6 @@
 /* 都道府県ゲーム（中濱Games）
  * 都道府県を箱に落として詰める。地図で隣り合う県がふれるとくっつく。
- * 日本列島が完成したら「2周目」か「エクストラステージ アジア大陸」へ。
+ * 日本列島が完成したら、そのままアジア大陸へ。アジア大陸まで完成させたら全クリア。
  */
 (() => {
   "use strict";
@@ -28,8 +28,8 @@
   //  neighbor:  次のピースを「箱にあるもののおとなり」にする確率
   //  hint:      今落とすピースとくっつけるかたまりを光らせる
   const MODES = {
-    normal: { name: "ふつう", exp: 0.25, lineY: 150, overLimit: 2200, neighbor: 0, hint: false },
-    easy:   { name: "かんたん", exp: 0.275, lineY: 142, overLimit: 3000, neighbor: 0.4, hint: true },
+    normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false },
+    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.4, hint: true },
   };
   let mode = "normal";
   let LINE_Y = MODES.normal.lineY;
@@ -114,7 +114,7 @@
   const ui = {
     score: $("score"), remain: $("remain"), nextName: $("nextName"), stageTag: $("stageTag"),
     shuffleBtn: $("shuffleBtn"), toast: $("toast"),
-    start: $("startScreen"), menu: $("menuScreen"), result: $("resultScreen"), clear: $("clearScreen"),
+    start: $("startScreen"), menu: $("menuScreen"), result: $("resultScreen"),
     bestNormal: $("bestNormal"), bestEasy: $("bestEasy"),
     resultTitle: $("resultTitle"), resultSub: $("resultSub"), resultScore: $("resultScore"),
     resultRegions: $("resultRegions"), resultBreakdown: $("resultBreakdown"), newBest: $("newBest"),
@@ -288,13 +288,13 @@
     stageStart = now;
     current = null;
     pending = [];
-    [ui.start, ui.menu, ui.result, ui.clear].forEach((el) => el.classList.add("hidden"));
+    [ui.start, ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
     ui.stageTag.textContent = stageLabel();
     nextPiece();
     updateHud();
     running = true;
     if (opts.keep || ST.key !== "japan") {
-      fx.push({ type: "banner", t0: now, dur: 1800, text: `${ST.key === "asia" ? "エクストラステージ" : `${lap}周目`}`, sub: ST.key === "asia" ? "アジア大陸をつなげよう" : "線が少し下がったよ", color: ST.key === "asia" ? "#3b6fd8" : "#e85d4a" });
+      fx.push({ type: "banner", t0: now, dur: 2000, text: opts.keep ? "つぎは アジア大陸！" : "エクストラステージ", sub: "となりの国どうしをつなげよう", color: "#3b6fd8" });
     }
   }
   const stageLabel = () => (ST.key === "asia" ? "アジア" : lap > 1 ? `日本 ${lap}周目` : "日本");
@@ -406,6 +406,7 @@
     Body.setVelocity(g.body, { x: vx * 0.5, y: Math.min(vy, 2) * 0.5 });
     g.droppedAt = Math.min(a.droppedAt, b.droppedAt);
     g.flash = 1;
+    g.shrinkFrom = Math.max(1, Math.max(a.geom.s, b.geom.s) / g.geom.s);  // くっつくと少し小さくなる
     Composite.add(world, g.body);
     groups.push(g);
 
@@ -479,23 +480,10 @@
     vibrate([40, 60, 40, 60, 120]);
     updateHud();
     if (hooks) { later(() => endGame(true), 2800); return; }
-    later(showStageClear, 3200);
+    if (ST.key === "japan") later(() => newGame(mode, { stage: "asia", lap, keep: true }), 3400);  // そのままアジア大陸へ
+    else later(() => endGame(true), 3200);                                                       // 全クリア
   }
 
-  // ---------- stage clear: つぎは どっちに いく？ ----------
-  function showStageClear() {
-    if (!completeAt || ended) return;
-    running = false;
-    $("clearTitle").textContent = `${ST.finalName} 完成！`;
-    $("clearScore").textContent = score;
-    $("clearSub").textContent = `${MODES[mode].name}モード・いまの合計`;
-    $("goAsiaBtn").style.display = ST.key === "japan" ? "" : "none";
-    $("goLapBtn").textContent = ST.key === "japan" ? `${lap + 1}周目へ` : `日本 ${lap + 1}周目へ`;
-    ui.clear.classList.remove("hidden");
-  }
-  $("goLapBtn").addEventListener("click", () => newGame(mode, { stage: "japan", lap: lap + 1, keep: true }));
-  $("goAsiaBtn").addEventListener("click", () => newGame(mode, { stage: "asia", lap, keep: true }));
-  $("goEndBtn").addEventListener("click", () => { ui.clear.classList.add("hidden"); endGame(true); });
 
   // ---------- shuffle ----------
   function doShuffle() {
@@ -524,7 +512,10 @@
 
     const reached = cleared.length ? cleared[cleared.length - 1] : "";
     lastResult = { mode, score, reached, laps: lap, stages: cleared.length };
-    ui.resultTitle.textContent = cleared.length ? (clearedNow && completeAt ? `${ST.finalName} 完成！` : "おつかれさま！") : timeUp ? "タイムアップ" : "ゲームオーバー";
+    const allClear = cleared.includes("アジア大陸");
+    ui.resultTitle.textContent = allClear ? (cleared.length > 1 ? "全クリア！" : "アジア大陸 完成！")
+      : cleared.length ? (timeUp ? "タイムアップ" : "ゲームオーバー")
+      : timeUp ? "タイムアップ" : "ゲームオーバー";
     const left = groups.length + (current ? 1 : 0) + queue.length;
     ui.resultSub.textContent = `【${MODES[mode].name}】` + (cleared.length
       ? `${cleared.join(" → ")} まで完成`
@@ -675,8 +666,10 @@
 
   function groupTransform(g) {
     const b = g.body;
-    const pop = Math.max(0, 1 - (now - g.born) / 300);
-    const k = 1 + 0.16 * Math.sin(pop * Math.PI);
+    const t = Math.min(1, (now - g.born) / 380);
+    const from = g.shrinkFrom || 1;
+    // くっついた直前の大きさ → 新しい（少し小さい）大きさへ、ぷにっと縮む
+    const k = (from + (1 - from) * ease(t)) * (1 + 0.1 * Math.sin(Math.min(1, t * 1.4) * Math.PI));
     ctx.translate(b.position.x, b.position.y);
     ctx.rotate(b.angle);
     ctx.scale(k, k);
@@ -1025,7 +1018,7 @@
     gameId++;
     running = false; ended = true; engine = null; groups = []; current = null; hooks = null;
     ST = STAGES.japan; fx = []; particles = [];
-    [ui.menu, ui.result, ui.clear].forEach((el) => el.classList.add("hidden"));
+    [ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
     ui.start.classList.remove("hidden");
     score = 0; queue = ST.ids.slice(); ui.stageTag.textContent = "日本"; updateHud();
   };
