@@ -1236,6 +1236,49 @@
   });
 
   ui.shuffleBtn.addEventListener("click", doShuffle);
+
+  // ---------- スマホを振ってシャッフル ----------
+  let shakeOn = store.get("prefpack.shake", true);
+  let motionAsked = false;
+  let shakePeaks = [];
+  function askMotion() {
+    // iPhone は「動作と方向」の許可が必要（ボタンを押したときにだけ聞ける）
+    if (motionAsked || !shakeOn) return;
+    motionAsked = true;
+    const DME = window.DeviceMotionEvent;
+    if (DME && typeof DME.requestPermission === "function") {
+      DME.requestPermission().then((r) => { if (r !== "granted") toast("振ってシャッフルは、ボタンでシャッフルしてね"); }).catch(() => {});
+    }
+  }
+  window.addEventListener("devicemotion", (e) => {
+    if (!shakeOn || !running || paused || ended) return;
+    const a = e.acceleration && e.acceleration.x != null ? e.acceleration : null;
+    let m;
+    if (a) m = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+    else {
+      const g = e.accelerationIncludingGravity;
+      if (!g || g.x == null) return;
+      m = Math.abs(Math.hypot(g.x || 0, g.y || 0, g.z || 0) - 9.8);
+    }
+    const t = performance.now();
+    if (m > 14) {
+      if (!shakePeaks.length || t - shakePeaks[shakePeaks.length - 1] > 90) shakePeaks.push(t);
+      shakePeaks = shakePeaks.filter((x) => t - x < 700);
+      // 0.7 秒のあいだに 2 回大きくゆれたらシャッフル（クールダウンは doShuffle 側）
+      if (shakePeaks.length >= 2) { shakePeaks = []; doShuffle(); }
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#startBtn, #startEasyBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #shakeBtn")) askMotion();
+  }, true);
+  const showShakeLabel = () => { $("shakeBtn").textContent = `振ってシャッフル：${shakeOn ? "ON" : "OFF"}`; };
+  showShakeLabel();
+  $("shakeBtn").addEventListener("click", () => {
+    shakeOn = !shakeOn;
+    store.set("prefpack.shake", shakeOn);
+    if (shakeOn) { motionAsked = false; askMotion(); }
+    showShakeLabel();
+  });
   $("holdBtn").addEventListener("click", doHold);
   $("startBtn").addEventListener("click", () => newGame("normal"));
   $("startEasyBtn").addEventListener("click", () => newGame("easy"));
