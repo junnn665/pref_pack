@@ -1686,6 +1686,18 @@
       vibrate([60, 40, 120]);
       later(() => endGame(false), 2000);
     },
+    // 対戦で、だれかが完成してから決められた時間が過ぎたとき: TIME UP を出して終わる
+    timeOver(reason) {
+      if (!running || ended || locked || completeAt) return false;
+      locked = true;
+      current = null;
+      fx.push({ type: "flash", t0: now, dur: 500, color: "#3b3226" });
+      fx.push({ type: "banner", t0: now, dur: 2200, text: "TIME UP", sub: reason || "", color: "#e85d4a", big: true });
+      shake = 6;
+      vibrate([60, 40, 120]);
+      later(() => endGame(false), 2000);
+      return true;
+    },
     // ----- 協力モード -----
     // role "host": 物理を計算して状態を配る / "client": 受け取った状態を描くだけ
     startCoop(role, m, seed, stage, h) {

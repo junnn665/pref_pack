@@ -148,6 +148,8 @@
   let createMode = "normal";
   let createStage = "japan";
   let createPlay = "vs";
+  let deadlineTimer = null;
+  const AFTER_FIRST = (window.__prefAfterFirst || 60) * 1000;   // 対戦: だれかが完成してから、ほかの人が遊べる時間
   const isCoop = () => !!R && R.play === "coop";
 
   const me = () => (R && R.players && R.players[PID]) || null;
@@ -393,6 +395,7 @@
         up[`players/${id}/finishAt`] = null;
       }
       up.coopResult = null;
+      up.endBy = null;
       try {
         if (R.play === "coop") await NET.set(CKEY(code), { created: NET.now() });
         await NET.update(KEY(code), up);
@@ -401,6 +404,13 @@
   }
   $("mpStart").addEventListener("click", (e) => startRoundAsHost(e.currentTarget));
   $("mpAgain").addEventListener("click", (e) => startRoundAsHost(e.currentTarget));
+  // もう一回の前にモード・ステージを選び直す（みんな待合室へ）
+  $("mpToLobby").addEventListener("click", (e) => {
+    if (!isHost() || !R) return;
+    busy(e.currentTarget, async () => {
+      try { await NET.update(KEY(code), { state: "lobby", endBy: null, ev: null }); } catch (err) { G().toast(netError(err)); }
+    });
+  });
 
   // ---------- playing ----------
   function startRound() {
@@ -418,6 +428,9 @@
     const mode = R.mode, stage = R.stage || "japan", seed = `${R.seed}:${R.round}`, startAt = R.startAt || 0;
     const cd = $("countdown");
     clearInterval(countdownTimer);
+    clearInterval(deadlineTimer);
+    deadlineTimer = setInterval(deadlineTick, 250);
+    $("deadline").classList.add("hidden");
     let lastShown = null;
     const tick = () => {
       const left = startAt - NET.now();
@@ -458,11 +471,45 @@
     amFirst() { return !participants().some((p) => p.id !== PID && p.status === "clear"); },
     onEnd(cleared, _score, extra) {
       finished = true;
+      if (cleared) startDeadline();
       clearInterval(liveTimer);
       pushLive(cleared ? "clear" : extra && extra.winner ? "win" : "over");
       setTimeout(() => { if (finished && code) { renderResult(); show("mpResult"); } }, cleared ? 0 : 700);
     },
   };
+
+  // ---------- だれかが完成したら「あと○秒」 ----------
+  // 最初に完成した人が endBy を書く。ほかの人はその時刻になったら TIME UP（点数で順位が決まる）
+  function startDeadline() {
+    if (!code || isCoop()) return;
+    const r = myRound;
+    if (!participants().some((p) => p.id !== PID && p.status === "playing" && p.online !== false)) return;
+    NET.tx(`${KEY(code)}/endBy`, (cur) => (cur && cur.r === r ? undefined : { r, at: NET.now() + AFTER_FIRST, name: (me() || {}).name || myName() || "だれか" })).catch(() => {});
+  }
+  const deadline = () => (R && !isCoop() && R.endBy && R.endBy.r === myRound ? R.endBy : null);
+  let lastDlSec = null;
+  function deadlineTick() {
+    const el = $("deadline");
+    const d = deadline();
+    if (!code || !d) { el.classList.add("hidden"); return; }
+    const left = d.at - NET.now();
+    const sec = Math.max(0, Math.ceil(left / 1000));
+    if (!finished && G().info.running) {
+      if (left <= 0) {
+        el.classList.add("hidden");
+        G().timeOver(`${d.name}さんの完成から${AFTER_FIRST / 1000}秒`);
+        return;
+      }
+      el.innerHTML = `⏱ ${esc(d.name)}さんが完成！ あと<b>${sec}</b>秒`;
+      el.classList.remove("hidden");
+      el.classList.toggle("urgent", sec <= 10);
+    } else {
+      el.classList.add("hidden");
+    }
+    // 結果画面で待っている人にも残り時間を出す
+    const key = Math.ceil(left / 1000);
+    if (finished && key !== lastDlSec && key > -8 && isOpen("mpResult")) { lastDlSec = key; renderResult(); }
+  }
 
   function pushLive(finalStatus) {
     if (!code || myRound < 0) return;
@@ -773,13 +820,16 @@
       ol.appendChild(li);
     });
     $("mpAgain").style.display = isHost() ? "" : "none";
-    msg("mpResultMsg", isHost() ? "" : "ホストが「もう一回」を押すと次が始まります", true);
+    $("mpToLobby").style.display = isHost() ? "" : "none";
+    msg("mpResultMsg", isHost() ? "" : "ホストが「もう一回」を押すと次が始まります（モードやステージが変わることもあります）", true);
   }
   function renderResult() {
     if (!R) return;
     if (isCoop()) { renderCoopResult(); return; }
     const list = ranked();
-    const done = (p) => p.status === "clear" || p.status === "over" || p.status === "win" || p.online === false;
+    const dl = deadline();
+    const dlPassed = dl && NET.now() > dl.at + 6000;   // 時間切れのあと、通信が来ない人は待たない
+    const done = (p) => p.status === "clear" || p.status === "over" || p.status === "win" || p.online === false || dlPassed;
     const allDone = list.every(done);
     const myRank = list.findIndex((p) => p.id === PID) + 1;
     const mine = list.find((p) => p.id === PID) || {};
@@ -788,8 +838,12 @@
       $("mpResultTitle").textContent = list.length > 1 ? (myRank === 1 ? "優勝！" : `${myRank}位`) : (mine.status === "clear" ? "日本列島 完成！" : "結果");
       $("mpResultSub").textContent = `${list.length}人で対戦・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}`;
     } else {
-      $("mpResultTitle").textContent = mine.status === "clear" ? "日本列島 完成！" : "ゲームオーバー";
-      $("mpResultSub").textContent = `まだ遊んでいる人がいます…（いまのところ ${myRank}位）`;
+      const timedOut = dl && mine.status === "over" && (mine.finishAt || 0) >= dl.at - 1500;
+      $("mpResultTitle").textContent = mine.status === "clear" ? "日本列島 完成！" : timedOut ? "時間切れ" : "ゲームオーバー";
+      const sec = dl ? Math.max(0, Math.ceil((dl.at - NET.now()) / 1000)) : null;
+      $("mpResultSub").textContent = sec != null
+        ? (sec > 0 ? `まだ遊んでいる人がいます…あと${sec}秒（いまのところ ${myRank}位）` : `まもなく結果が出ます…（いまのところ ${myRank}位）`)
+        : `まだ遊んでいる人がいます…（いまのところ ${myRank}位）`;
     }
 
     const ol = $("mpRanking");
@@ -806,9 +860,10 @@
     });
 
     $("mpAgain").style.display = isHost() ? "" : "none";
+    $("mpToLobby").style.display = isHost() ? "" : "none";
     msg("mpResultMsg", isHost()
       ? (allDone ? "" : "みんなが終わる前でも、もう一回を始められます")
-      : "ホストが「もう一回」を押すと次が始まります", true);
+      : "ホストが「もう一回」を押すと次が始まります（モードやステージが変わることもあります）", true);
   }
 
   // ---------- leave ----------
@@ -816,6 +871,8 @@
     stopCoop();
     clearInterval(liveTimer);
     clearInterval(countdownTimer);
+    clearInterval(deadlineTimer);
+    $("deadline").classList.add("hidden");
     $("countdown").classList.add("hidden");
     $("rivals").classList.add("hidden");
     document.body.classList.remove("in-match");

@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261019-10">
+  <link rel="stylesheet" href="style.css?v=20261019-11">
 </head>
 <body>
   <div id="app">
@@ -47,6 +47,7 @@
       <canvas id="game"></canvas>
       <div class="toast" id="toast"></div>
       <div class="countdown hidden" id="countdown"></div>
+      <div class="deadline hidden" id="deadline"></div>
       <div class="stamp-bar hidden" id="stampBar"><button data-stamp="👍">👍</button><button data-stamp="😂">😂</button><button data-stamp="😱">😱</button><button data-stamp="🔥">🔥</button><button data-stamp="うわー">うわー</button><button data-stamp="ナイス！">ナイス！</button><button data-stamp="まだまだ！">まだまだ！</button></div>
       <div class="my-stamp" id="myStamp"></div>
     </main>
@@ -211,7 +212,8 @@
         <p class="result-sub" id="mpResultSub"></p>
         <ol class="ranking" id="mpRanking"></ol>
         <div class="stamp-row"><button data-stamp="👍">👍</button><button data-stamp="😂">😂</button><button data-stamp="😱">😱</button><button data-stamp="🔥">🔥</button><button data-stamp="うわー">うわー</button><button data-stamp="ナイス！">ナイス！</button><button data-stamp="まだまだ！">まだまだ！</button></div>
-        <button class="btn primary" id="mpAgain">もう一回（この部屋で）</button>
+        <button class="btn primary" id="mpAgain">もう一回（同じ設定で）</button>
+        <button class="btn" id="mpToLobby">モード・ステージを変える</button>
         <p class="mp-msg" id="mpResultMsg"></p>
         <button class="btn" id="mpLeave2">部屋を出る</button>
       </div>
@@ -253,15 +255,15 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261019-10"></script>
-  <script src="js/prefs.js?v=20261019-10"></script>
-  <script src="js/asia.js?v=20261019-10"></script>
-  <script src="js/world.js?v=20261019-10"></script>
-  <script src="js/capitals.js?v=20261019-10"></script>
-  <script src="js/facts.js?v=20261019-10"></script>
-  <script src="js/islands.js?v=20261019-10"></script>
-  <script src="js/game.js?v=20261019-10"></script>
-  <script src="lib/qrcode.min.js?v=20261019-10"></script>
-  <script src="js/net.js?v=20261019-10"></script>
+  <script src="vendor/matter.min.js?v=20261019-11"></script>
+  <script src="js/prefs.js?v=20261019-11"></script>
+  <script src="js/asia.js?v=20261019-11"></script>
+  <script src="js/world.js?v=20261019-11"></script>
+  <script src="js/capitals.js?v=20261019-11"></script>
+  <script src="js/facts.js?v=20261019-11"></script>
+  <script src="js/islands.js?v=20261019-11"></script>
+  <script src="js/game.js?v=20261019-11"></script>
+  <script src="lib/qrcode.min.js?v=20261019-11"></script>
+  <script src="js/net.js?v=20261019-11"></script>
 </body>
 </html>

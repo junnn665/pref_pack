@@ -356,6 +356,17 @@ html, body {
   z-index: 5;
 }
 .countdown.hidden { display: none; }
+/* 対戦: だれかが完成したあとの残り時間 */
+.deadline {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  background: rgba(232, 93, 74, .92); color: #fff; font-weight: 800; font-size: 13px;
+  padding: 3px 12px; border-radius: 999px; white-space: nowrap;
+  box-shadow: 0 3px 0 rgba(59,50,38,.18); pointer-events: none; z-index: 4;
+}
+.deadline b { font-size: 17px; margin: 0 2px; }
+.deadline.hidden { display: none; }
+.deadline.urgent { animation: dlPulse .5s ease-in-out infinite alternate; }
+@keyframes dlPulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.08); } }
 .countdown.pop { animation: pop .6s ease-out; }
 @keyframes pop { from { transform: scale(1.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
