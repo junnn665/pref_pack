@@ -306,10 +306,12 @@
     const canEdit = isHost() && R.state === "lobby";
     $("mpLobbyMode").textContent = `モード：${modeName}` + (canEdit ? "（タップで切りかえ）" : "");
     $("mpLobbyMode").style.cursor = canEdit ? "pointer" : "";
-    $("mpLobbyStage").textContent = `ステージ：${STAGE_NAMES[R.stage || "japan"]}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpLobbyStage").textContent = `ステージ：${STAGE_NAMES[R.stage || "japan"]}`;
+    $("mpLobbyStageGrid").style.display = canEdit ? "" : "none";
+    $("mpLobbyStageGrid").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.stage === (R.stage || "japan")));
     $("mpLobbyPlay").textContent = `あそびかた：${isCoop() ? "協力（みんなで1つの箱）" : "対戦"}` + (canEdit ? "（タップで切りかえ）" : "");
     $("mpLobbyPlay").style.cursor = canEdit ? "pointer" : "";
-    $("mpLobbyStage").style.cursor = canEdit ? "pointer" : "";
+
 
     const ps = Object.entries(R.players || {}).sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0));
     $("mpPlayers").innerHTML = ps.map(([id, p]) => {
@@ -338,10 +340,10 @@
     if (!isHost() || !R || R.state !== "lobby") return;
     NET.set(`${KEY(code)}/mode`, R.mode === "easy" ? "normal" : "easy").catch(() => {});
   });
-  $("mpLobbyStage").addEventListener("click", () => {
-    if (!isHost() || !R || R.state !== "lobby") return;
-    const i = STAGE_ORDER.indexOf(R.stage || "japan");
-    NET.set(`${KEY(code)}/stage`, STAGE_ORDER[(i + 1) % STAGE_ORDER.length]).catch(() => {});
+  $("mpLobbyStageGrid").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-stage]");
+    if (!b || !isHost() || !R || R.state !== "lobby") return;
+    NET.set(`${KEY(code)}/stage`, b.dataset.stage).catch(() => {});
   });
   $("mpPlaySeg").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-play]");

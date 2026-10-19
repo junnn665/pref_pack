@@ -549,3 +549,12 @@ body.facts-off .fact-row { display: none; }
 .coop-chip.turn { background: #ffe1d9; transform: translateY(-2px); box-shadow: 0 4px 0 #e85d4a; }
 .coop-chip.turn .cc-st { color: #c2402f; }
 .coop-chip.me { outline: 2px solid var(--wood); }
+
+/* stage grid (multiplayer) */
+.stage-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.stage-grid button {
+  font: inherit; font-weight: 800; font-size: 13px; border: 0; border-radius: 10px;
+  background: #efe5d3; color: var(--ink-soft); padding: 9px 4px; cursor: pointer;
+}
+.stage-grid button.on { background: #3b6fd8; color: #fff; box-shadow: 0 2px 0 #2a52a6; }
+.stage-grid button.wide { grid-column: 1 / -1; font-size: 12px; }

@@ -1349,12 +1349,37 @@
   let shakePeaks = [];
   function askMotion() {
     // iPhone は「動作と方向」の許可が必要（ボタンを押したときにだけ聞ける）
-    if (motionAsked || !shakeOn) return;
+    if (motionAsked || (!shakeOn && !tiltOn)) return;
     motionAsked = true;
-    const DME = window.DeviceMotionEvent;
+    const DME = window.DeviceMotionEvent, DOE = window.DeviceOrientationEvent;
     if (DME && typeof DME.requestPermission === "function") {
-      DME.requestPermission().then((r) => { if (r !== "granted") toast("振ってシャッフルは、ボタンでシャッフルしてね"); }).catch(() => {});
+      DME.requestPermission().then((r) => { if (r !== "granted") toast("振る・傾ける操作は使えません（ボタンと指で操作してね）"); }).catch(() => {});
     }
+    if (DOE && typeof DOE.requestPermission === "function") DOE.requestPermission().catch(() => {});
+  }
+
+  // ---------- 左右に傾けて、落とす前のピースを動かす ----------
+  let tiltOn = store.get("prefpack.tilt", true);
+  let tiltGamma = 0;
+  let tiltAt = 0;
+  window.addEventListener("deviceorientation", (e) => {
+    if (e.gamma == null) return;
+    // 画面の向き（横向き）に合わせて左右を決める
+    const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    let g = e.gamma;
+    if (ang === 90) g = e.beta; else if (ang === -90 || ang === 270) g = -e.beta;
+    tiltGamma = Math.max(-45, Math.min(45, g || 0));
+    tiltAt = performance.now();
+  });
+  function tiltStep(dt) {
+    if (!tiltOn || pointerDown || !current || !running || paused || ended || locked || completeAt) return;
+    if (!canControl() || performance.now() - tiltAt > 500) return;
+    const DEAD = 6;   // これより小さい傾きでは動かさない
+    const a = Math.abs(tiltGamma);
+    if (a < DEAD) return;
+    const speed = Math.min(1, (a - DEAD) / 24) * 0.42;   // 最大 0.42px/ms ≒ 箱の端から端まで約0.9秒
+    const nx = clampAim(aimX + Math.sign(tiltGamma) * speed * dt);
+    if (nx !== aimX) { aimX = nx; aimChanged(); }
   }
   window.addEventListener("devicemotion", (e) => {
     if (!shakeOn || !running || paused || ended) return;
@@ -1375,8 +1400,16 @@
     }
   });
   document.addEventListener("click", (e) => {
-    if (e.target.closest("#startBtn, #startEasyBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #shakeBtn")) askMotion();
+    if (e.target.closest("#startBtn, #startEasyBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #shakeBtn, #tiltBtn")) askMotion();
   }, true);
+  const showTiltLabel = () => { $("tiltBtn").textContent = `傾けて移動：${tiltOn ? "ON" : "OFF"}`; };
+  showTiltLabel();
+  $("tiltBtn").addEventListener("click", () => {
+    tiltOn = !tiltOn;
+    store.set("prefpack.tilt", tiltOn);
+    if (tiltOn) { motionAsked = false; askMotion(); }
+    showTiltLabel();
+  });
   const showShakeLabel = () => { $("shakeBtn").textContent = `振ってシャッフル：${shakeOn ? "ON" : "OFF"}`; };
   showShakeLabel();
   $("shakeBtn").addEventListener("click", () => {
@@ -1457,6 +1490,7 @@
   function frame(t) {
     const dt = Math.min(100, t - last);
     last = t;
+    if (engine && !paused) tiltStep(dt);
     if (engine && !paused && (running || completeAt) && !ended) {
       acc += dt;
       let n = 0;
@@ -1763,6 +1797,7 @@
     clearBox() { for (const g of groups) Composite.remove(world, g.body); groups = []; current = null; queue = []; },
     partCenter(pid) { for (const g of groups) { const ps = g.body.parts.filter((q) => q.plugin && q.plugin.pid === pid); if (ps.length) { let x = 0, y = 0, a = 0; for (const q of ps) { x += q.position.x * q.area; y += q.position.y * q.area; a += q.area; } return { x: x / a, y: y / a, top: Math.min(...ps.map((q) => q.bounds.min.y)) }; } } return null; },
     setCurrent(id) { current = { id, bb: groupBoundsAt([id]) }; },
+    get aim() { return aimX; },
     get lastTouch() { return lastTouch; },
     bounds(id) { const b = groupBoundsAt([id]); return { w: b.maxX - b.minX, h: b.maxY - b.minY }; },
     groupsInfo: () => groups.map((g) => ({ m: [...g.members], x: g.body.position.x, y: g.body.position.y })),

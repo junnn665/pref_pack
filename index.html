@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261019-7">
+  <link rel="stylesheet" href="style.css?v=20261019-9">
 </head>
 <body>
   <div id="app">
@@ -70,7 +70,7 @@
         <details class="howto">
           <summary>あそびかた</summary>
           <ul class="rules">
-            <li><b>タップ／ドラッグ</b>で位置を決めて、はなすと落ちる</li>
+            <li><b>タップ／ドラッグ</b>で位置を決めて、はなすと落ちる（スマホを<b>左右に傾けて</b>動かすこともできる）</li>
             <li>地図で<b>隣り合う県</b>がふれると、くっつく</li>
             <li>地方がそろうとボーナス。<b>シャッフル</b>は何回でもOK（スマホを<b>振って</b>もシャッフルできる）</li>
             <li>線より上にあふれたら終わり</li>
@@ -144,13 +144,16 @@
           <button class="on" data-play="vs">⚔️ 対戦</button>
           <button data-play="coop">🤝 協力</button>
         </div>
-        <div class="seg seg4" id="mpStageSeg">
+        <p class="section-label">ステージ</p>
+        <div class="stage-grid" id="mpStageSeg">
           <button class="on" data-stage="japan">日本</button>
           <button data-stage="asia">アジア</button>
-          <button data-stage="both">日本→<br>アジア</button>
-          <button data-stage="all">ぜんぶ</button>
+          <button data-stage="europe">ヨーロッパ</button>
+          <button data-stage="africa">アフリカ</button>
+          <button data-stage="world">世界</button>
+          <button data-stage="both">日本→アジア</button>
+          <button data-stage="all" class="wide">ぜんぶつなげる（日本 → 世界）</button>
         </div>
-        <p class="mode-note">ヨーロッパ・アフリカ・世界は、待合室でステージをタップして選べます</p>
         <button class="btn primary" id="mpCreateGo">作る</button>
         <button class="btn" data-back>もどる</button>
         <p class="mp-msg" id="mpCreateMsg"></p>
@@ -184,6 +187,15 @@
         <p class="lobby-mode" id="mpLobbyPlay"></p>
         <p class="lobby-mode" id="mpLobbyMode"></p>
         <p class="lobby-mode" id="mpLobbyStage"></p>
+        <div class="stage-grid host-only" id="mpLobbyStageGrid">
+          <button data-stage="japan">日本</button>
+          <button data-stage="asia">アジア</button>
+          <button data-stage="europe">ヨーロッパ</button>
+          <button data-stage="africa">アフリカ</button>
+          <button data-stage="world">世界</button>
+          <button data-stage="both">日本→アジア</button>
+          <button data-stage="all" class="wide">ぜんぶつなげる（日本 → 世界）</button>
+        </div>
         <ul class="players" id="mpPlayers"></ul>
         <button class="btn primary" id="mpStart">スタート</button>
         <p class="mp-msg" id="mpLobbyMsg"></p>
@@ -211,6 +223,7 @@
         <button class="btn primary" id="resumeBtn">つづける</button>
         <button class="btn" id="factsBtn">豆知識：ON</button>
         <button class="btn" id="shakeBtn">振ってシャッフル：ON</button>
+        <button class="btn" id="tiltBtn">傾けて移動：ON</button>
         <button class="btn solo-only" id="restartBtn">はじめから</button>
         <button class="btn solo-only" id="titleBtn">モードをえらびなおす</button>
         <button class="btn multi-only" id="mpLeave3">対戦をぬける</button>
@@ -240,15 +253,15 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261019-7"></script>
-  <script src="js/prefs.js?v=20261019-7"></script>
-  <script src="js/asia.js?v=20261019-7"></script>
-  <script src="js/world.js?v=20261019-7"></script>
-  <script src="js/capitals.js?v=20261019-7"></script>
-  <script src="js/facts.js?v=20261019-7"></script>
-  <script src="js/islands.js?v=20261019-7"></script>
-  <script src="js/game.js?v=20261019-7"></script>
-  <script src="lib/qrcode.min.js?v=20261019-7"></script>
-  <script src="js/net.js?v=20261019-7"></script>
+  <script src="vendor/matter.min.js?v=20261019-9"></script>
+  <script src="js/prefs.js?v=20261019-9"></script>
+  <script src="js/asia.js?v=20261019-9"></script>
+  <script src="js/world.js?v=20261019-9"></script>
+  <script src="js/capitals.js?v=20261019-9"></script>
+  <script src="js/facts.js?v=20261019-9"></script>
+  <script src="js/islands.js?v=20261019-9"></script>
+  <script src="js/game.js?v=20261019-9"></script>
+  <script src="lib/qrcode.min.js?v=20261019-9"></script>
+  <script src="js/net.js?v=20261019-9"></script>
 </body>
 </html>
