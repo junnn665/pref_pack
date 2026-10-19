@@ -108,14 +108,14 @@
       "#f5ae62", // 南アジア
       "#7fb7e8", // 中央アジア
       "#b6a3e6", // 西アジア
-    ], { key: "asia", name: "アジア", finalName: "アジア大陸", homeName: "日本", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, expAdd: 0.025, finalTime: 90, cap: true }),
+    ], { key: "asia", name: "アジア", finalName: "アジア大陸", homeName: "日本", regionName: (r) => r, skipRegions: [], clearBonus: 6000, par: 300, exp: 0.17, boost: 0.615, finalTime: 90, cap: true }),
     europe: buildStage(window.WORLD_DATA.europe, [
       "#f2c94c", // (これまでのステージ)
       "#7fb7e8", // 北ヨーロッパ
       "#f29abf", // 西ヨーロッパ
       "#f5ae62", // 南ヨーロッパ
       "#a3d06a", // 東ヨーロッパ
-    ], { key: "europe", name: "ヨーロッパ", finalName: "ユーラシア大陸", homeName: "アジア", regionName: (r) => r, skipRegions: [0], clearBonus: 8000, par: 300, expAdd: 0.03, finalTime: 90, cap: true }),
+    ], { key: "europe", name: "ヨーロッパ", finalName: "ユーラシア大陸", homeName: "アジア", regionName: (r) => r, skipRegions: [0], clearBonus: 8000, par: 300, exp: 0.17, boost: 0.79, finalTime: 90, cap: true }),
     africa: buildStage(window.WORLD_DATA.africa, [
       "#f2c94c",
       "#f5ae62", // 北アフリカ
@@ -123,7 +123,7 @@
       "#86cfb0", // 中部アフリカ
       "#a3d06a", // 東アフリカ
       "#b6a3e6", // 南部アフリカ
-    ], { key: "africa", name: "アフリカ", finalName: "アフリカ大陸", homeName: "ユーラシア", regionName: (r) => r, skipRegions: [0], clearBonus: 10000, par: 330, expAdd: 0.03, finalTime: 100, cap: true }),
+    ], { key: "africa", name: "アフリカ", finalName: "アフリカ大陸", homeName: "ユーラシア", regionName: (r) => r, skipRegions: [0], clearBonus: 10000, par: 330, exp: 0.17, boost: 0.65, finalTime: 100, cap: true }),
     world: buildStage(window.WORLD_DATA.world, [
       "#f2c94c",
       "#7fb7e8", // 北アメリカ
@@ -131,7 +131,7 @@
       "#86cfb0", // カリブ海
       "#a3d06a", // 南アメリカ
       "#f5ae62", // オセアニア
-    ], { key: "world", name: "世界", finalName: "世界", homeName: "ユーラシア・アフリカ", regionName: (r) => r, skipRegions: [0], clearBonus: 15000, par: 330, expAdd: 0.03, finalTime: 100, cap: true }),
+    ], { key: "world", name: "世界", finalName: "世界", homeName: "ユーラシア・アフリカ", regionName: (r) => r, skipRegions: [0], clearBonus: 15000, par: 330, exp: 0.17, boost: 1.1, finalTime: 100, cap: true }),
   };
   const ORDER = ["japan", "asia", "europe", "africa", "world"];
   // 前のステージで完成させた部分（アジアでは日本、ほかは HOME）は金色で描き、最初から箱に入れる
@@ -154,8 +154,14 @@
   }
   let ST = STAGES.japan;
 
+  // アジア以降のステージは、国の大きさの差が大きいので、小さい国も見えるように専用の exp と倍率（boost）を使う
+  //   exp:   小さいほど大きい国と小さい国の差が縮まる
+  //   boost: 1 か国あたりの大きさ（日本ステージの県と同じくらいになるように調整）
+  function stageExp(st, M) {
+    return st.exp != null ? st.exp + (M.exp - MODES.normal.exp) * 0.4 : M.exp;
+  }
   function scaleFor(area, st = ST, exp = EXP) {
-    return st.sTotal * Math.pow(area / st.total, exp - 0.5);
+    return st.sTotal * (st.boost || 1) * Math.pow(area / st.total, exp - 0.5);
   }
 
   // ---------- DOM ----------
@@ -238,6 +244,24 @@
   // 1つのかたまりの大きさの上限（アジア以降。ロシアやユーラシアが大きすぎて詰まないように）
   const CAP_W = 0.6 * (BOX_R - BOX_L);
   const CAP_H = 0.5 * (FLOOR - 150);
+  // 金色のかたまり（これまでのステージ）は、国をつなげても縮まない。箱からはみ出しそうなときだけ縮む
+  const FIT_W = 0.92 * (BOX_R - BOX_L);
+  const FIT_H = 0.6 * (FLOOR - 150);
+  const HOME_W = 0.8 * (BOX_R - BOX_L);   // 金色のかたまりの、最初の大きさの上限
+  const HOME_H = 0.4 * (FLOOR - 150);
+  // アジア以降: かたまりが大きくなったときの縮み方（日本ステージよりゆるやか）
+  const GROUP_SHRINK = 0.12;
+  const SPAN_MAX = 140;
+  const homeScaleCache = new Map();
+  function homeScale(st, exp) {
+    const k = `${st.key}:${exp}`;
+    if (!homeScaleCache.has(k)) {
+      const p = st.pieces[st.homeId];
+      const b = p.bbox;
+      homeScaleCache.set(k, Math.min(HOME_W / (b.maxX - b.minX), HOME_H / (b.maxY - b.minY)));
+    }
+    return homeScaleCache.get(k);
+  }
   function makeGroupGeom(members, st = ST, exp = EXP) {
     let area = 0, ox = 0, oy = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -249,9 +273,25 @@
     }
     ox /= area; oy /= area;
     let s = scaleFor(area, st, exp);
-    // 完成した最後のかたまりは上限なし（演出で大きく見せる）
     const count = members.size != null ? members.size : members.length;
-    if (st.cap && count < st.ids.length) s = Math.min(s, CAP_W / (maxX - minX), CAP_H / (maxY - minY));
+    if (st.cap) {
+      const bw = maxX - minX, bh = maxY - minY;
+      const list = members.size != null ? [...members] : members;
+      if (count >= st.ids.length) {
+        s = st.sTotal;   // 完成した最後のかたまりは、箱いっぱいの大きさ
+      } else if (st.homeId != null && list.includes(st.homeId)) {
+        s = Math.min(homeScale(st, exp), FIT_W / bw, FIT_H / bh);
+      } else {
+        // いちばん大きい国の大きさを基準に、少しずつ縮む（どんどん小さくなって見えなくならないように）
+        let amax = 0;
+        for (const id of list) amax = Math.max(amax, st.pieces[id].area);
+        s = scaleFor(amax, st, exp) * Math.pow(area / amax, -GROUP_SHRINK);
+        s = Math.min(s, CAP_W / bw, CAP_H / bh);
+        // 島が散らばった国（バハマ・バヌアツなど）や細長い国は、広がりすぎないようにする
+        const span = Math.max(bw, bh);
+        if (span > 3 * Math.sqrt(area)) s = Math.min(s, Math.max(SPAN_MAX / span, 0));
+      }
+    }
     return { area, ox, oy, s };
   }
 
@@ -320,7 +360,7 @@
     const M = MODES[mode];
     ST = STAGES[opts.stage || "japan"];
     lap = opts.lap || 1;
-    EXP = M.exp + (ST.expAdd || 0);
+    EXP = stageExp(ST, M);
     LINE_Y = M.lineY + LAP_LINE * Math.min(lap - 1, 3);
     OVER_LIMIT = M.overLimit;
     seedBase = opts.seed || null;
@@ -498,13 +538,56 @@
       if (!A || !B) continue;
       if (A.island || B.island) {
         // 島は、親の県（国）の部分にふれると吸収される
-        if (A.island && A.parentId === pb) absorbs.push([a, pa, B]);
-        else if (B.island && B.parentId === pa) absorbs.push([b, pb, A]);
+        // 親が金色のかたまり（これまでのステージ）なら、金色のどこにふれても OK
+        const hid = ST.homeId;
+        if (A.island && (A.parentId === pb || (A.parentId === hid && b.members.has(hid)))) absorbs.push([a, pa, ST.pieces[A.parentId]]);
+        else if (B.island && (B.parentId === pa || (B.parentId === hid && a.members.has(hid)))) absorbs.push([b, pb, ST.pieces[B.parentId]]);
         continue;
       }
-      if (!A.adjSet.has(pb)) continue;
-      pending.push([a, b, pa, pb]);
+      // 金色のかたまり（これまでのステージ）は、つながった国が小さくて見分けにくいので、
+      // 金色のどこにふれても、そのかたまりのどれかの国ととなりならくっつく
+      if (ST.homeId != null && (a.members.has(ST.homeId) || b.members.has(ST.homeId))) {
+        const pr = homePair(a, b);
+        if (pr) { pending.push([a, b, pr[0], pr[1]]); continue; }
+      }
+      if (A.adjSet.has(pb)) { pending.push([a, b, pa, pb]); continue; }
+      // 小さい県・国は、ぴったりその部分にふれなくても、ふれた所のすぐ近くにあれば OK
+      const near = nearPair(a, b, pair);
+      if (near) pending.push([a, b, near[0], near[1]]);
     }
+  }
+  function homePair(a, b) {
+    for (const i of a.members) {
+      const adj = ST.pieces[i].adjSet;
+      for (const j of b.members) if (adj.has(j)) return [i, j];
+    }
+    return null;
+  }
+  const NEAR_TOL = 12;
+  function partsNear(g, x, y) {
+    const out = new Set();
+    for (const q of g.body.parts) {
+      const pid = q.plugin && q.plugin.pid;
+      if (pid == null || out.has(pid)) continue;
+      const bd = q.bounds;
+      const dx = Math.max(bd.min.x - x, 0, x - bd.max.x), dy = Math.max(bd.min.y - y, 0, y - bd.max.y);
+      if (dx * dx + dy * dy <= NEAR_TOL * NEAR_TOL) out.add(pid);
+    }
+    return out;
+  }
+  function nearPair(a, b, pair) {
+    if (!adjacent(a, b)) return null;
+    const sp = pair.collision && pair.collision.supports && pair.collision.supports[0];
+    if (!sp) return null;
+    const na = partsNear(a, sp.x, sp.y);
+    if (!na.size) return null;
+    const nb = partsNear(b, sp.x, sp.y);
+    for (const i of na) {
+      const P = ST.pieces[i];
+      if (!P || P.island) continue;
+      for (const j of nb) if (P.adjSet.has(j)) return [i, j];
+    }
+    return null;
   }
 
   const isNeighbor = (hid, id) => (ST.pieces[hid].island ? ST.pieces[hid].parentId === id : ST.pieces[hid].adjSet.has(id));
@@ -941,10 +1024,10 @@
     for (const id of members) {
       const p = ST.pieces[id];
       const size = geom.s * Math.sqrt(p.area);
-      if (size < 22) continue;
+      if (size < 13) continue;
       let fs = Math.max(8, Math.min(15, size * 0.24));
       ctx.font = `800 ${fs}px ${FONT}`;
-      const maxW = Math.max(size * 1.2, 30);
+      const maxW = Math.max(size * 1.3, 34);
       const tw = ctx.measureText(p.short).width;
       if (tw > maxW) { fs = Math.max(7, fs * maxW / tw); ctx.font = `800 ${fs}px ${FONT}`; }
       const w = toWorld(p.cx, p.cy);
@@ -1095,6 +1178,8 @@
       }, g.gold);
     }
 
+    drawMiniMap();
+
     if (current && running && !ended) {
       const { geom } = current.bb;
       const ready = now >= canDropAt;
@@ -1152,6 +1237,59 @@
     drawDropTimer();
     drawTurn();
     for (const f of fx) if (f.type !== "rays") drawFx(f);
+  }
+
+  // 地図ガイド: 箱の左上の小さな地図で、いま落とす県（国）が「この辺にある」と赤く示す
+  const MINI_W = 128, MINI_H = 104, MINI_X = BOX_L + 6, MINI_Y = 16;
+  function drawMiniMap() {
+    if (!running || ended || completeAt || !current) return;
+    const cur = ST.pieces[current.id];
+    if (!cur) return;
+    const target = cur.island ? ST.pieces[cur.parentId] : cur;   // 島は親の場所を示す
+    const m = Math.min((MINI_W - 10) / ST.ew, (MINI_H - 10) / ST.eh);
+    const mw = ST.ew * m + 10, mh = ST.eh * m + 10;
+    // ぶら下がっているピースと重なるときは薄くする
+    const bb = current.bb;
+    const overlap = aimX + bb.minX < MINI_X + mw + 4 && HANG_Y + bb.minY < MINI_Y + mh + 4;
+    const placed = new Set();
+    for (const g of groups) for (const id of g.members) placed.add(id);
+    ctx.save();
+    ctx.globalAlpha = overlap ? 0.25 : 0.95;
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.strokeStyle = "rgba(156,122,69,.35)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(MINI_X, MINI_Y, mw, mh, 8) : ctx.rect(MINI_X, MINI_Y, mw, mh);
+    ctx.fill(); ctx.stroke();
+    ctx.save();
+    ctx.translate(MINI_X + 5, MINI_Y + 5);
+    ctx.scale(m, m);
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 0.6 / m;
+    for (const id of ST.ids) {
+      const p = ST.pieces[id];
+      if (p === target) continue;
+      ctx.fillStyle = p.home ? "#f2d77a" : placed.has(id) ? shade(p.color, 0.25) : "#e4dac8";
+      ctx.fill(p.path);
+      ctx.strokeStyle = "rgba(255,255,255,.9)";
+      ctx.stroke(p.path);
+    }
+    if (target) {
+      const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+      ctx.fillStyle = "#e85d4a";
+      ctx.fill(target.path);
+      ctx.restore();
+      // 小さい県・国でも見つけやすいように、まわりに輪を出す
+      const b = target.bbox;
+      const cx = MINI_X + 5 + (b.minX + b.maxX) / 2 * m, cy = MINI_Y + 5 + (b.minY + b.maxY) / 2 * m;
+      const r = Math.max(5, Math.max(b.maxX - b.minX, b.maxY - b.minY) * m / 2 + 3) + pulse * 2;
+      ctx.strokeStyle = `rgba(232,93,74,${0.55 + 0.4 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   // 1ピースの持ち時間（箱の上のバー。残り3秒から赤く数字も出す）
@@ -1520,7 +1658,7 @@
   function stageParams(key) {
     const M = MODES[mode];
     ST = STAGES[key];
-    EXP = M.exp + (ST.expAdd || 0);
+    EXP = stageExp(ST, M);
     LINE_Y = M.lineY;
     OVER_LIMIT = M.overLimit;
   }
@@ -1641,7 +1779,7 @@
     const ly = M.lineY + (opts.lineDown ? LINE_DROP : 0);
     c.beginPath(); c.moveTo(BOX_L, ly); c.lineTo(BOX_R, ly); c.stroke(); c.setLineDash([]);
     for (const [members, x, y, a, lx, ly2] of snap || []) {
-      const geom = makeGroupGeom(members, J, M.exp + (J.expAdd || 0));
+      const geom = makeGroupGeom(members, J, stageExp(J, M));
       c.save();
       c.translate(x, y); c.rotate(a); c.translate(-lx, -ly2);
       c.scale(geom.s, geom.s); c.translate(-geom.ox, -geom.oy);
@@ -1788,6 +1926,15 @@
         if (!b) break;
         merge(a, b);
         mine = groups.filter((g) => [...g.members].every((m) => ids.includes(m)));
+      }
+    },
+    // テスト用: 金色のかたまりに、となりのかたまりを n 回くっつける
+    joinHome(n = 1) {
+      for (let k = 0; k < n; k++) {
+        const h = groups.find((g) => g.members.has(ST.homeId));
+        const o = h && groups.find((g) => g !== h && adjacent(h, g));
+        if (!o) return;
+        merge(h, o);
       }
     },
     STAGES,
