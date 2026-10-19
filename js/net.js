@@ -517,6 +517,7 @@
       applyTurn();
       coopUnsubs.push(NET.on(`${CKEY(code)}/cmd`, onCoopCmd));
       coopUnsubs.push(NET.on(`${CKEY(code)}/aim`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("aim", a.x); }));
+      coopUnsubs.push(NET.on(`${CKEY(code)}/tilt`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("tilt", a.g); }));
       coopTimer = setInterval(pushCoop, COOP_EVERY);
       pushCoop();
     } else {
@@ -598,6 +599,10 @@
     coop: true,
     cmd(type, x) {
       if (!code) return;
+      if (type === "tilt") {
+        NET.set(`${CKEY(code)}/tilt/${PID}`, { g: x, t: Date.now() }).catch(() => {});
+        return;
+      }
       if (type === "aim") {
         const t = Date.now();
         if (t - lastAim < 90) return;

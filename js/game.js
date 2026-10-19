@@ -1343,80 +1343,66 @@
 
   ui.shuffleBtn.addEventListener("click", doShuffle);
 
-  // ---------- スマホを振ってシャッフル ----------
-  let shakeOn = store.get("prefpack.shake", true);
+  // ---------- 傾けると、箱の中の県・国がすべる（重力が傾く） ----------
+  let tiltOn = store.get("prefpack.tilt", true);
   let motionAsked = false;
-  let shakePeaks = [];
   function askMotion() {
     // iPhone は「動作と方向」の許可が必要（ボタンを押したときにだけ聞ける）
-    if (motionAsked || (!shakeOn && !tiltOn)) return;
+    if (motionAsked || !tiltOn) return;
     motionAsked = true;
-    const DME = window.DeviceMotionEvent, DOE = window.DeviceOrientationEvent;
-    if (DME && typeof DME.requestPermission === "function") {
-      DME.requestPermission().then((r) => { if (r !== "granted") toast("振る・傾ける操作は使えません（ボタンと指で操作してね）"); }).catch(() => {});
-    }
+    const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === "function") DOE.requestPermission().catch(() => {});
   }
-
-  // ---------- 左右に傾けて、落とす前のピースを動かす ----------
-  let tiltOn = store.get("prefpack.tilt", true);
   let tiltGamma = 0;
   let tiltAt = 0;
+  let remoteTilt = { g: 0, at: 0 };   // 協力（ホスト）: ほかの人の番のときは、その人の傾き
+  let lastTiltSent = 0;
   window.addEventListener("deviceorientation", (e) => {
     if (e.gamma == null) return;
-    // 画面の向き（横向き）に合わせて左右を決める
+    // 横向きにしているときは左右の軸を入れかえる
     const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
     let g = e.gamma;
     if (ang === 90) g = e.beta; else if (ang === -90 || ang === 270) g = -e.beta;
     tiltGamma = Math.max(-45, Math.min(45, g || 0));
     tiltAt = performance.now();
+    sendTilt();
   });
-  function tiltStep(dt) {
-    if (!tiltOn || pointerDown || !current || !running || paused || ended || locked || completeAt) return;
-    if (!canControl() || performance.now() - tiltAt > 500) return;
-    const DEAD = 6;   // これより小さい傾きでは動かさない
-    const a = Math.abs(tiltGamma);
-    if (a < DEAD) return;
-    const speed = Math.min(1, (a - DEAD) / 24) * 0.42;   // 最大 0.42px/ms ≒ 箱の端から端まで約0.9秒
-    const nx = clampAim(aimX + Math.sign(tiltGamma) * speed * dt);
-    if (nx !== aimX) { aimX = nx; aimChanged(); }
+  // 協力（ホスト以外）: 自分の番なら傾きをホストに送る
+  function sendTilt() {
+    if (!coop || coop.role !== "client" || !tiltOn || !coop.myTurn || !running || ended) return;
+    if (performance.now() - lastTiltSent < 150) return;
+    lastTiltSent = performance.now();
+    coop.hooks.cmd("tilt", Math.round(tiltGamma));
   }
-  window.addEventListener("devicemotion", (e) => {
-    if (!shakeOn || !running || paused || ended) return;
-    const a = e.acceleration && e.acceleration.x != null ? e.acceleration : null;
-    let m;
-    if (a) m = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
-    else {
-      const g = e.accelerationIncludingGravity;
-      if (!g || g.x == null) return;
-      m = Math.abs(Math.hypot(g.x || 0, g.y || 0, g.z || 0) - 9.8);
+  const TILT_DEAD = 5;      // これより小さい傾きでは動かない
+  const TILT_MAX_G = 0.6;   // いちばん傾けたときの横向きの重力（下向きは 1）
+  function tiltToGravity(g) {
+    const a = Math.abs(g);
+    if (a < TILT_DEAD) return 0;
+    return Math.sign(g) * Math.min(1, (a - TILT_DEAD) / 30) * TILT_MAX_G;
+  }
+  function tiltStep() {
+    const fresh = performance.now() - tiltAt < 600;
+    if (coop && coop.role === "client") { if (fresh) sendTilt(); return; }
+    if (!engine || !engine.gravity) return;
+    let target = 0;
+    if (running && !paused && !ended && !completeAt) {
+      if (coop && !coop.myTurn) target = performance.now() - remoteTilt.at < 800 ? tiltToGravity(remoteTilt.g) : 0;
+      else if (tiltOn && fresh) target = tiltToGravity(tiltGamma);
     }
-    const t = performance.now();
-    if (m > 14) {
-      if (!shakePeaks.length || t - shakePeaks[shakePeaks.length - 1] > 90) shakePeaks.push(t);
-      shakePeaks = shakePeaks.filter((x) => t - x < 700);
-      // 0.7 秒のあいだに 2 回大きくゆれたらシャッフル（クールダウンは doShuffle 側）
-      if (shakePeaks.length >= 2) { shakePeaks = []; doShuffle(); }
-    }
-  });
+    engine.gravity.x += (target - engine.gravity.x) * 0.15;
+    if (Math.abs(engine.gravity.x) < 0.002) engine.gravity.x = 0;
+  }
   document.addEventListener("click", (e) => {
-    if (e.target.closest("#startBtn, #startEasyBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #shakeBtn, #tiltBtn")) askMotion();
+    if (e.target.closest("#startBtn, #startEasyBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #tiltBtn")) askMotion();
   }, true);
-  const showTiltLabel = () => { $("tiltBtn").textContent = `傾けて移動：${tiltOn ? "ON" : "OFF"}`; };
+  const showTiltLabel = () => { $("tiltBtn").textContent = `傾けてすべらせる：${tiltOn ? "ON" : "OFF"}`; };
   showTiltLabel();
   $("tiltBtn").addEventListener("click", () => {
     tiltOn = !tiltOn;
     store.set("prefpack.tilt", tiltOn);
     if (tiltOn) { motionAsked = false; askMotion(); }
     showTiltLabel();
-  });
-  const showShakeLabel = () => { $("shakeBtn").textContent = `振ってシャッフル：${shakeOn ? "ON" : "OFF"}`; };
-  showShakeLabel();
-  $("shakeBtn").addEventListener("click", () => {
-    shakeOn = !shakeOn;
-    store.set("prefpack.shake", shakeOn);
-    if (shakeOn) { motionAsked = false; askMotion(); }
-    showShakeLabel();
   });
   $("holdBtn").addEventListener("click", doHold);
   $("startBtn").addEventListener("click", () => newGame("normal"));
@@ -1490,7 +1476,7 @@
   function frame(t) {
     const dt = Math.min(100, t - last);
     last = t;
-    if (engine && !paused) tiltStep(dt);
+    if (engine) tiltStep();
     if (engine && !paused && (running || completeAt) && !ended) {
       acc += dt;
       let n = 0;
@@ -1719,6 +1705,7 @@
     coopRemote(type, x) {
       if (!coop || coop.role !== "host") return;
       if (type === "aim") { aimX = clampAim(x); return; }
+      if (type === "tilt") { remoteTilt = { g: x || 0, at: performance.now() }; return; }
       if (type === "drop") { if (x != null) aimX = clampAim(x); drop(true); return; }
       if (type === "hold") { doHold(true); return; }
       if (type === "shuffle") doShuffle();
