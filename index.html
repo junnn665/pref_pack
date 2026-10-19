@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261019-5">
+  <link rel="stylesheet" href="style.css?v=20261019-7">
 </head>
 <body>
   <div id="app">
@@ -80,6 +80,7 @@
             <li>くっつくと、その県の<b>県庁所在地・名産</b>（国なら首都）が出る</li>
             <li><b>ホールド</b>で今のピースを取っておける（1回落とすまでに1回）</li>
             <li>1ピースの持ち時間は 8 秒（かんたんは 12 秒）。過ぎるとその場で自動で落ちる</li>
+            <li><b>協力</b>：みんなで1つの箱を使って、順番に1つずつ落とす。シャッフルはだれでもOK</li>
             <li><b>対戦</b>：同じ順番で県が出る。ステージは日本〜世界、続けて遊ぶ「日本→アジア」「ぜんぶ」から選べる。先に完成させた人の勝ち。地方をそろえると、相手に<b>島（おじゃまピース）</b>が飛んでいく。島は親の県（佐渡島なら新潟）にくっつけると消えてボーナス</li>
           </ul>
         </details>
@@ -108,7 +109,7 @@
           <p class="mode-note lock-note">🔒 日本列島を完成させると、つぎのステージから直接あそべます</p>
         </div>
         <button class="btn rank-open" id="rankOpenBtn">🏆 ランキング</button>
-        <p class="section-label">みんなで対戦 <span class="net-badge">通信</span></p>
+        <p class="section-label">みんなで対戦・協力 <span class="net-badge">通信</span></p>
         <div class="modes">
           <button class="btn vs" id="mpCreateBtn">部屋を作る</button>
           <button class="btn vs ghosty" id="mpJoinBtn">番号で参加</button>
@@ -138,6 +139,10 @@
         <div class="seg" id="mpModeSeg">
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
+        </div>
+        <div class="seg" id="mpPlaySeg">
+          <button class="on" data-play="vs">⚔️ 対戦</button>
+          <button data-play="coop">🤝 協力</button>
         </div>
         <div class="seg seg4" id="mpStageSeg">
           <button class="on" data-stage="japan">日本</button>
@@ -176,6 +181,7 @@
             <button class="btn small" id="mpShare">招待リンクを送る</button>
           </div>
         </div>
+        <p class="lobby-mode" id="mpLobbyPlay"></p>
         <p class="lobby-mode" id="mpLobbyMode"></p>
         <p class="lobby-mode" id="mpLobbyStage"></p>
         <ul class="players" id="mpPlayers"></ul>
@@ -234,15 +240,15 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261019-5"></script>
-  <script src="js/prefs.js?v=20261019-5"></script>
-  <script src="js/asia.js?v=20261019-5"></script>
-  <script src="js/world.js?v=20261019-5"></script>
-  <script src="js/capitals.js?v=20261019-5"></script>
-  <script src="js/facts.js?v=20261019-5"></script>
-  <script src="js/islands.js?v=20261019-5"></script>
-  <script src="js/game.js?v=20261019-5"></script>
-  <script src="lib/qrcode.min.js?v=20261019-5"></script>
-  <script src="js/net.js?v=20261019-5"></script>
+  <script src="vendor/matter.min.js?v=20261019-7"></script>
+  <script src="js/prefs.js?v=20261019-7"></script>
+  <script src="js/asia.js?v=20261019-7"></script>
+  <script src="js/world.js?v=20261019-7"></script>
+  <script src="js/capitals.js?v=20261019-7"></script>
+  <script src="js/facts.js?v=20261019-7"></script>
+  <script src="js/islands.js?v=20261019-7"></script>
+  <script src="js/game.js?v=20261019-7"></script>
+  <script src="lib/qrcode.min.js?v=20261019-7"></script>
+  <script src="js/net.js?v=20261019-7"></script>
 </body>
 </html>

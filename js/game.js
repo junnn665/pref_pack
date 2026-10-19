@@ -205,6 +205,7 @@
   let pieceShownAt = 0;
   let locked = false;
   let wonEarly = false;
+  let coop = null;           // 協力モード { role: "host"|"client", myTurn, turnName, fx, seq, lastSeq, hooks, gmap }
   let held = null;           // ホールド中のピース（ID）
   let holdUsed = false;      // 1回落とすまでにホールドは1回だけ      // 対戦: 完成前に1位が確定した        // 対戦で最下位確定 → 操作できない      // いまのピースが出た時刻（落とすまでの持ち時間）
   let chainTo = "world";     // どのステージまで続けるか（ひとりは世界まで。対戦は部屋の設定）
@@ -325,6 +326,7 @@
     seedBase = opts.seed || null;
     chainTo = opts.chainTo || (opts.hooks ? (opts.stage || "japan") : "world");
     rand = opts.seed ? seeded(String(opts.seed)) : Math.random;
+    if (!opts.keep) coop = opts.coop || null;
     hooks = opts.hooks || null;
     lineDownUntil = 0;
     locked = false;
@@ -432,7 +434,9 @@
     return Math.max(BOX_L - minX + 2, Math.min(BOX_R - maxX - 2, x));
   }
 
-  function drop() {
+  function drop(sys) {
+    if (coop && coop.role === "client") { if (coop.myTurn && current && running && !ended) coop.hooks.cmd("drop", aimX); return; }
+    if (coop && !sys && !coop.myTurn) return;   // 協力: 自分の番のときだけ
     if (!running || paused || ended || locked || !current || now < canDropAt) return;
     const g = createGroupBody([current.id], aimX, HANG_Y);
     Body.setPosition(g.body, { x: aimX + g.local.x, y: HANG_Y + g.local.y });
@@ -443,6 +447,7 @@
     groups.push(g);
     canDropAt = now + DROP_COOLDOWN;
     holdUsed = false;
+    if (coop && coop.hooks.onDrop) coop.hooks.onDrop();
     if (!queue.length && held == null && !finalStart) {
       // 最後のピース → ここから制限時間
       finalStart = now;
@@ -455,7 +460,9 @@
   }
 
   // ---------- hold ----------
-  function doHold() {
+  function doHold(sys) {
+    if (coop && coop.role === "client") { if (coop.myTurn) coop.hooks.cmd("hold"); return; }
+    if (coop && !sys && !coop.myTurn) return;
     if (!running || paused || ended || locked || completeAt || !current) return;
     if (holdUsed) { toast("ホールドは1回落とすまで1回だけ"); return; }
     holdUsed = true;
@@ -583,23 +590,49 @@
     const color = mainColor(members);
     const { x, y } = g.body.position;
     const size = Math.max(g.body.bounds.max.x - g.body.bounds.min.x, g.body.bounds.max.y - g.body.bounds.min.y);
+    fxMerge(x, y, size, members.length, color, gained, combo);
+    emit({ t: "m", x: Math.round(x), y: Math.round(y), z: Math.round(size), n: members.length, c: color, g: gained, k: combo, f: [...(a.members.size <= b.members.size ? a : b).members] });
+
+    showFact(a.members.size <= b.members.size ? a : b);
+    checkRegions(g);
+    if (g.gold) completeStage(g);
+    updateHud();
+  }
+
+  // 協力モード（ホスト）: 演出をほかの人にも送る
+  function emit(e) {
+    if (!coop || coop.role !== "host") return;
+    coop.fx.push({ ...e, q: ++coop.seq });
+    if (coop.fx.length > 24) coop.fx.shift();
+  }
+  function fxMerge(x, y, size, n, color, gained, cmb) {
     fx.push({ type: "ring", t0: now, dur: 520, x, y, r0: size * 0.25, r1: size * 0.75 + 30, color });
     fx.push({ type: "ring", t0: now + 90, dur: 520, x, y, r0: size * 0.2, r1: size * 0.6 + 20, color: "#ffffff" });
     // 文字は同時に出しすぎない（連鎖で画面が埋まらないように）
     const bigBanner = fx.some((f) => f.type === "banner" && f.big);
     fx = fx.filter((f, i, arr) => f.type !== "text" || arr.filter((x) => x.type === "text").indexOf(f) >= arr.filter((x) => x.type === "text").length - 3);
     if (!bigBanner) {
-      fx.push({ type: "text", t0: now, dur: 900, x, y: y - 10, text: `+${gained}`, color: shade(color, -0.35), size: 18 + Math.min(8, members.length) });
-      if (combo >= 2) fx.push({ type: "text", t0: now + 120, dur: 900, x, y: y - 36, text: `${combo} コンボ！`, color: "#e85d4a", size: Math.min(28, 16 + combo * 2) });
+      fx.push({ type: "text", t0: now, dur: 900, x, y: y - 10, text: `+${gained}`, color: shade(color, -0.35), size: 18 + Math.min(8, n) });
+      if (cmb >= 2) fx.push({ type: "text", t0: now + 120, dur: 900, x, y: y - 36, text: `${cmb} コンボ！`, color: "#e85d4a", size: Math.min(28, 16 + cmb * 2) });
     }
-    burst(x, y, members.length, false, color);
-    if (members.length >= 6) shake = Math.max(shake, 4 + Math.min(6, members.length / 4));
-    vibrate(members.length > 10 ? 30 : 15);
-
-    showFact(a.members.size <= b.members.size ? a : b);
-    checkRegions(g);
-    if (g.gold) completeStage(g);
-    updateHud();
+    burst(x, y, n, false, color);
+    if (n >= 6) shake = Math.max(shake, 4 + Math.min(6, n / 4));
+    vibrate(n > 10 ? 30 : 15);
+  }
+  function fxRegion(ri, bonus) {
+    const color = ST.colors[ri];
+    fx.push({ type: "banner", t0: now, dur: 1700, text: `${ST.regionName(ST.regions[ri])}`, sub: `コンプリート！ +${bonus}`, color });
+    confetti(26, [color, shade(color, -0.25), "#ffffff", "#f7d35c"]);
+    shake = Math.max(shake, 8);
+    vibrate([20, 40, 30]);
+  }
+  function fxComplete(text, sub, g) {
+    fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
+    if (g) fx.push({ type: "rays", t0: now, dur: 3200, group: g });
+    fx.push({ type: "banner", t0: now + 250, dur: 2700, text, sub, color: "#e8a019", big: true });
+    for (let i = 0; i < 5; i++) later(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
+    shake = 14;
+    vibrate([40, 60, 40, 60, 120]);
   }
 
   // ---------- 豆知識（くっついたピースの県庁所在地・名産／首都） ----------
@@ -616,7 +649,7 @@
   }
   function showFact(small) {
     if (!factsOn || completeAt) return;
-    for (const id of small.members) {
+    for (const id of small.members || small) {
       const p = ST.pieces[id];
       if (p.home || factShown.has(`${ST.key}:${id}`)) continue;
       factShown.add(`${ST.key}:${id}`);
@@ -648,12 +681,7 @@
       const color = ST.colors[ri];
       g.glowUntil = now + 1800;
       g.glowColor = color;
-      if (!g.gold) {
-        fx.push({ type: "banner", t0: now, dur: 1700, text: `${ST.regionName(ST.regions[ri])}`, sub: `コンプリート！ +${bonus}`, color });
-        confetti(26, [color, shade(color, -0.25), "#ffffff", "#f7d35c"]);
-        shake = Math.max(shake, 8);
-        vibrate([20, 40, 30]);
-      }
+      if (!g.gold) { fxRegion(ri, bonus); emit({ t: "r", ri, b: bonus }); }
       if (hooks && hooks.onRegion) hooks.onRegion(ri, ST.regionName(ST.regions[ri]));
     });
   }
@@ -675,18 +703,15 @@
     completeAt = now;
     g.glowUntil = now + 4000;
     g.glowColor = "#f7d35c";
-    fx.push({ type: "flash", t0: now, dur: 600, color: "#fff6d6" });
-    fx.push({ type: "rays", t0: now, dur: 3200, group: g });
     // 対戦で、最終ゴールを一番に完成させたら WINNER
     const nextStage = ORDER[ORDER.indexOf(ST.key) + 1];
     const finalGoal = ST.key === chainTo || !nextStage;
     const win = hooks && finalGoal && hooks.amFirst && hooks.amFirst();
-    if (win) fx.push({ type: "banner", t0: now + 250, dur: 2700, text: "WINNER", sub: `${ST.finalName} 一番のり！`, color: "#e8a019", big: true });
-    else fx.push({ type: "banner", t0: now + 250, dur: 2700, text: `${ST.finalName} 完成！`, sub: `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`, color: "#e8a019", big: true });
-    for (let i = 0; i < 5; i++) later(() => confetti(36, ["#f7d35c", "#e8b931", "#fff3c4", "#ef8a7c", "#7fb7e8", "#86cfb0"]), i * 350);
+    const btext = win ? "WINNER" : coop && finalGoal ? "みんなで完成！" : `${ST.finalName} 完成！`;
+    const bsub = win ? `${ST.finalName} 一番のり！` : `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`;
+    fxComplete(btext, bsub, g);
+    emit({ t: "c", tx: btext, sb: bsub });
     if (!hooks) { store.set("prefpack.unlocked", Math.max(unlockedLevel(), ORDER.indexOf(ST.key) + 1)); showAsiaUnlock(); }
-    shake = 14;
-    vibrate([40, 60, 40, 60, 120]);
     updateHud();
     if (hooks && hooks.onStage) hooks.onStage(ST.key);
     if (!finalGoal) {
@@ -701,6 +726,7 @@
 
   // ---------- shuffle ----------
   function doShuffle() {
+    if (coop && coop.role === "client") { if (running && !ended && now >= shuffleReadyAt) { shuffleReadyAt = now + SHUFFLE_COOLDOWN; coop.hooks.cmd("shuffle"); } return; }
     if (!running || paused || ended || locked || now < shuffleReadyAt) return;
     shuffleReadyAt = now + SHUFFLE_COOLDOWN;
     shufflesUsed++;
@@ -759,6 +785,7 @@
 
   // ---------- update ----------
   function update(dt) {
+    if (coop && coop.role === "client") { remoteUpdate(dt); return; }
     Engine.update(engine, dt);
     processMerges();
 
@@ -783,7 +810,7 @@
     overTimer = danger ? overTimer + dt : Math.max(0, overTimer - dt * 2);
     if (overTimer > OVER_LIMIT && !completeAt && !locked) endGame(false);
     // 持ち時間切れ → 今の位置で自動で落とす
-    if (current && !completeAt && !locked && now >= canDropAt && now - pieceShownAt > MODES[mode].dropLimit) drop();
+    if (current && !completeAt && !locked && now >= canDropAt && now - pieceShownAt > MODES[mode].dropLimit) drop(true);
     if (finalStart && !completeAt && !ended && !locked && finalLeft() <= 0) {
       timeUp = true;
       fx.push({ type: "banner", t0: now, dur: 1400, text: "タイムアップ", sub: "", color: "#3b3226" });
@@ -1123,10 +1150,27 @@
     }
     drawFinalTimer();
     drawDropTimer();
+    drawTurn();
     for (const f of fx) if (f.type !== "rays") drawFx(f);
   }
 
   // 1ピースの持ち時間（箱の上のバー。残り3秒から赤く数字も出す）
+  function drawTurn() {
+    if (!coop || !running || ended || completeAt) return;
+    ctx.save();
+    ctx.font = `800 13px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const t = coop.myTurn ? "あなたの番！" : `${coop.turnName || "だれか"}さんの番`;
+    const w = ctx.measureText(t).width + 22;
+    ctx.fillStyle = coop.myTurn ? "#e85d4a" : "rgba(59,50,38,.75)";
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(W / 2 - w / 2, 15, w, 22, 11) : ctx.rect(W / 2 - w / 2, 15, w, 22);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillText(t, W / 2, 26.5);
+    ctx.restore();
+  }
   function drawDropTimer() {
     if (!current || !running || ended || completeAt || locked) return;
     const lim = MODES[mode].dropLimit;
@@ -1265,13 +1309,20 @@
     const r = canvas.getBoundingClientRect();
     return ((e.clientX - r.left) / r.width) * W;
   }
+  const canControl = () => !coop || coop.myTurn;
+  let lastAimSent = 0;
+  function aimChanged() {
+    if (coop && coop.role === "client" && coop.myTurn && performance.now() - lastAimSent > 90) { lastAimSent = performance.now(); coop.hooks.cmd("aim", aimX); }
+  }
   canvas.addEventListener("pointerdown", (e) => {
+    if (!canControl()) return;
     pointerDown = true;
     aimX = clampAim(toLogicalX(e));
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener("pointermove", (e) => {
-    if (pointerDown || e.pointerType === "mouse") aimX = clampAim(toLogicalX(e));
+    if (!canControl()) return;
+    if (pointerDown || e.pointerType === "mouse") { aimX = clampAim(toLogicalX(e)); aimChanged(); }
   });
   canvas.addEventListener("pointerup", (e) => {
     if (!pointerDown) return;
@@ -1282,8 +1333,9 @@
   canvas.addEventListener("pointercancel", () => { pointerDown = false; });
   window.addEventListener("keydown", (e) => {
     if (!running || e.target.closest("input")) return;
-    if (e.key === "ArrowLeft") aimX = clampAim(aimX - 12);
-    if (e.key === "ArrowRight") aimX = clampAim(aimX + 12);
+    if (!canControl()) return;
+    if (e.key === "ArrowLeft") { aimX = clampAim(aimX - 12); aimChanged(); }
+    if (e.key === "ArrowRight") { aimX = clampAim(aimX + 12); aimChanged(); }
     if (e.key === " " || e.key === "ArrowDown") { e.preventDefault(); drop(); }
     if (e.key === "s") doShuffle();
     if (e.key === "h" || e.key === "c") doHold();
@@ -1366,7 +1418,7 @@
   const toTitle = () => {
     gameId++;
     $("fact").classList.remove("show");
-    running = false; ended = true; engine = null; groups = []; current = null; hooks = null;
+    running = false; ended = true; engine = null; groups = []; current = null; hooks = null; coop = null;
     ST = STAGES.japan; fx = []; particles = [];
     [ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
     ui.start.classList.remove("hidden");
@@ -1444,6 +1496,110 @@
   resize();
   requestAnimationFrame(frame);
 
+  // ---------- 協力モード（ホスト以外）: 受け取った状態を描く ----------
+  function stageParams(key) {
+    const M = MODES[mode];
+    ST = STAGES[key];
+    EXP = M.exp + (ST.expAdd || 0);
+    LINE_Y = M.lineY;
+    OVER_LIMIT = M.overLimit;
+  }
+  function startClient(m, stage, c) {
+    if (m) mode = m;
+    gameId++;
+    coop = c;
+    hooks = c.hooks;
+    stageParams(stage);
+    engine = { remote: true };
+    world = null;
+    groups = []; queue = []; current = null; held = null; holdUsed = false;
+    score = 0; parts = { merge: 0, region: 0, clear: 0, time: 0 }; cleared = [];
+    particles = []; fx = []; regionsDone = new Set();
+    ended = false; paused = false; locked = false; completeAt = 0; finalStart = 0; overTimer = 0; timeUp = false;
+    lineDownUntil = 0;
+    factShown = new Set();
+    [ui.start, ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
+    ui.stageTag.textContent = stageLabel();
+    running = true;
+    updateHud();
+  }
+  // Firebase は配列を {0:…,1:…} のオブジェクトで返すことがあるので配列にそろえる
+  const toArr = (v) => (Array.isArray(v) ? v : v && typeof v === "object" ? Object.keys(v).sort((a, b) => a - b).map((k) => v[k]) : []);
+  function applyCoopState(st) {
+    if (!coop || coop.role !== "client" || !st) return;
+    if (st.stage && st.stage !== ST.key) {
+      const keep = ST.key != null;
+      stageParams(st.stage);
+      coop.gmap.clear();
+      groups = [];
+      completeAt = 0;
+      ui.stageTag.textContent = stageLabel();
+      if (keep) fx.push({ type: "banner", t0: now + 300, dur: 2200, text: "世界が広がった！", sub: `${ST.homeName}から${ST.name}をつなげよう`, color: "#3b6fd8" });
+    }
+    score = st.score || 0;
+    held = st.held != null ? st.held : null;
+    holdUsed = !!st.hu;
+    queue = st.next != null ? [st.next] : [];
+    if (st.cur != null) {
+      if (!current || current.id !== st.cur) current = { id: st.cur, bb: groupBoundsAt([st.cur]) };
+      if (!coop.myTurn || !pointerDown) { if (!coop.myTurn) aimX = clampAim(st.aim); }
+    } else current = null;
+    const lim = MODES[mode].dropLimit;
+    pieceShownAt = now - (lim - (st.dl != null ? st.dl : lim));
+    finalStart = st.fl != null ? now - (ST.finalTime * 1000 - st.fl) : 0;
+    overTimer = (st.ov || 0) * OVER_LIMIT;
+    if (st.done && !completeAt) completeAt = now;
+    // かたまり
+    let snap = [];
+    try { snap = JSON.parse(st.s || "[]"); } catch { /* ignore */ }
+    const seen = new Set();
+    for (const [m, x, y, a, lx, ly] of snap) {
+      const key = m.slice().sort((p, q) => p - q).join(",");
+      seen.add(key);
+      let g = coop.gmap.get(key);
+      if (!g) {
+        g = { members: new Set(m), geom: makeGroupGeom(m), local: { x: lx, y: ly }, body: { position: { x, y }, angle: a },
+          tgt: { x, y, a }, born: now, flash: m.length > 1 ? 1 : 0, glowUntil: 0, gold: m.length === ST.ids.length };
+        coop.gmap.set(key, g);
+      } else { g.tgt = { x, y, a }; g.local = { x: lx, y: ly }; }
+    }
+    for (const k of [...coop.gmap.keys()]) if (!seen.has(k)) coop.gmap.delete(k);
+    groups = [...coop.gmap.values()];
+    // 演出
+    for (const e of toArr(st.fx)) {
+      if (e.q <= coop.lastSeq) continue;
+      coop.lastSeq = e.q;
+      if (e.t === "m") { fxMerge(e.x, e.y, e.z || 60, e.n, e.c, e.g, e.k); if (e.f) showFact(toArr(e.f)); }
+      else if (e.t === "r") fxRegion(e.ri, e.b);
+      else if (e.t === "c") { const big = groups.find((x) => x.gold); if (big) { big.glowUntil = now + 4000; big.glowColor = "#f7d35c"; } fxComplete(e.tx, e.sb, big); }
+    }
+    updateHud();
+    ui.remain.textContent = st.left != null ? st.left : ui.remain.textContent;
+    if (st.ended && !ended) {
+      ended = true;
+      running = false;
+      cleared = toArr(st.cleared);
+      if (hooks && hooks.onEnd) hooks.onEnd(!!st.cl, score, {});
+    }
+  }
+  function remoteUpdate(dt) {
+    for (const g of groups) {
+      const t = g.tgt;
+      if (!t) continue;
+      g.body.position.x += (t.x - g.body.position.x) * 0.35;
+      g.body.position.y += (t.y - g.body.position.y) * 0.35;
+      g.body.angle += (t.a - g.body.angle) * 0.35;
+      if (g.flash > 0) g.flash = Math.max(0, g.flash - dt / 380);
+    }
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += p.g; p.vx *= p.drag; p.rot += p.vr; p.life -= dt; }
+    particles = particles.filter((p) => p.life > 0 && p.y < H + 40);
+    fx = fx.filter((f) => now < f.t0 + f.dur);
+    if (shake > 0) shake *= 0.86;
+    if (shake < 0.3) shake = 0;
+    const shuffleReady = now >= shuffleReadyAt;
+    if (ui.shuffleBtn.disabled === shuffleReady) ui.shuffleBtn.disabled = !shuffleReady;
+  }
+
   // ---------- public API (net.js: 対戦 / ランキング) ----------
   function snapshot() {
     const r = (v) => Math.round(v * 10) / 10;
@@ -1510,6 +1666,42 @@
       vibrate([60, 40, 120]);
       later(() => endGame(false), 2000);
     },
+    // ----- 協力モード -----
+    // role "host": 物理を計算して状態を配る / "client": 受け取った状態を描くだけ
+    startCoop(role, m, seed, stage, h) {
+      const first = stage === "both" || stage === "all" ? "japan" : stage;
+      const to = stage === "both" ? "asia" : stage === "all" ? "world" : stage;
+      const c = { role, myTurn: false, turnName: "", fx: [], seq: 0, lastSeq: 0, hooks: h, gmap: new Map() };
+      if (role === "host") { newGame(m, { seed, hooks: h, stage: first, chainTo: to, coop: c }); return; }
+      startClient(m, first, c);
+    },
+    coopSetTurn(name, mine) {
+      if (!coop) return;
+      if (mine && !coop.myTurn && running && !ended) { vibrate([20, 30, 20]); }
+      coop.myTurn = !!mine;
+      coop.turnName = name || "";
+    },
+    // ホスト: ほかの人の操作
+    coopRemote(type, x) {
+      if (!coop || coop.role !== "host") return;
+      if (type === "aim") { aimX = clampAim(x); return; }
+      if (type === "drop") { if (x != null) aimX = clampAim(x); drop(true); return; }
+      if (type === "hold") { doHold(true); return; }
+      if (type === "shuffle") doShuffle();
+    },
+    coopState() {
+      if (!coop) return null;
+      return {
+        stage: ST.key, s: JSON.stringify(snapshot()), cur: current ? current.id : null, aim: Math.round(aimX * 10) / 10,
+        next: queue.length ? queue[0] : null, held, hu: holdUsed, score,
+        left: queue.length + (current ? 1 : 0) + (held != null ? 1 : 0),   // 画面の「のこり」と同じ数え方
+        dl: current ? Math.max(0, Math.round(MODES[mode].dropLimit - (now - pieceShownAt))) : null,
+        fl: finalStart && !completeAt ? Math.max(0, Math.round(finalLeft())) : null,
+        ov: Math.round(Math.min(1, overTimer / OVER_LIMIT) * 100) / 100, done: !!completeAt,
+        fx: coop.fx, ended, cl: ended && cleared.length > 0 && !timeUp && !!completeAt, cleared: cleared.slice(),
+      };
+    },
+    coopApply(st) { applyCoopState(st); },
     // 対戦: おじゃまピース（島）を「つぎ」に割り込ませる。送られた島の名前を返す
     addIsland() {
       if (!running || ended || locked || completeAt || !ST.islands.length) return null;

@@ -19,6 +19,8 @@
   };
   const FIREBASE_VER = "10.12.2";
   const KEY = (code) => `rooms/pref-${code}`;
+  const CKEY = (code) => `rooms/pref-${code}-coop`;   // 協力モードの箱の状態・操作（部屋本体とは別にして通信を軽く）
+  const COOP_EVERY = 120;
   const ATTACK_MS = 10000;
   const LIVE_EVERY = 1000;
   const ROOM_TTL = 24 * 60 * 60 * 1000;
@@ -145,6 +147,8 @@
   let countdownTimer = null;
   let createMode = "normal";
   let createStage = "japan";
+  let createPlay = "vs";
+  const isCoop = () => !!R && R.play === "coop";
 
   const me = () => (R && R.players && R.players[PID]) || null;
   const isHost = () => !!R && R.host === PID;
@@ -198,7 +202,7 @@
         const c = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
         const t = NET.now();
         const room = {
-          game: "pref", created: t, host: PID, mode: createMode, stage: createStage, seed: Math.random().toString(36).slice(2, 10),
+          game: "pref", created: t, host: PID, mode: createMode, stage: createStage, play: createPlay, seed: Math.random().toString(36).slice(2, 10),
           state: "lobby", round: 0,
           players: { [PID]: { name, joined: t, online: true } },
         };
@@ -255,10 +259,15 @@
     if (v.state === "playing" && mine.round === v.round) {
       if (myRound !== v.round) startRound();
       handleEvents();
-      checkLastPlace();
-      checkWinner();
-      renderRivals();
-      if (finished) renderResult();
+      if (isCoop()) {
+        coopOnRoom();
+        if (finished) renderResult();
+      } else {
+        checkLastPlace();
+        checkWinner();
+        renderRivals();
+        if (finished) renderResult();
+      }
     } else {
       // 待合室（開始前、または途中参加で次の回待ち）
       if (myRound !== -1 && v.state === "lobby") stopPlaying();
@@ -298,6 +307,8 @@
     $("mpLobbyMode").textContent = `モード：${modeName}` + (canEdit ? "（タップで切りかえ）" : "");
     $("mpLobbyMode").style.cursor = canEdit ? "pointer" : "";
     $("mpLobbyStage").textContent = `ステージ：${STAGE_NAMES[R.stage || "japan"]}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpLobbyPlay").textContent = `あそびかた：${isCoop() ? "協力（みんなで1つの箱）" : "対戦"}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpLobbyPlay").style.cursor = canEdit ? "pointer" : "";
     $("mpLobbyStage").style.cursor = canEdit ? "pointer" : "";
 
     const ps = Object.entries(R.players || {}).sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0));
@@ -313,7 +324,7 @@
     const startBtn = $("mpStart");
     if (R.state === "playing") {
       startBtn.style.display = "none";
-      msg("mpLobbyMsg", "いま対戦中です。次の回から参加できます", true);
+      msg("mpLobbyMsg", isCoop() ? "いま協力プレイ中です。次の回から参加できます" : "いま対戦中です。次の回から参加できます", true);
     } else if (isHost()) {
       startBtn.style.display = "";
       msg("mpLobbyMsg", online < 2 ? "相手が入ってくるのを待とう（ひとりでも始められます）" : `${online}人そろったらスタート！`, true);
@@ -331,6 +342,16 @@
     if (!isHost() || !R || R.state !== "lobby") return;
     const i = STAGE_ORDER.indexOf(R.stage || "japan");
     NET.set(`${KEY(code)}/stage`, STAGE_ORDER[(i + 1) % STAGE_ORDER.length]).catch(() => {});
+  });
+  $("mpPlaySeg").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-play]");
+    if (!b) return;
+    createPlay = b.dataset.play;
+    $("mpPlaySeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  });
+  $("mpLobbyPlay").addEventListener("click", () => {
+    if (!isHost() || !R || R.state !== "lobby") return;
+    NET.set(`${KEY(code)}/play`, isCoop() ? "vs" : "coop").catch(() => {});
   });
   $("mpStageSeg").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-stage]");
@@ -369,8 +390,11 @@
         up[`players/${id}/lineDown`] = false;
         up[`players/${id}/finishAt`] = null;
       }
-      try { await NET.update(KEY(code), up); }
-      catch (err) { G().toast(netError(err)); }
+      up.coopResult = null;
+      try {
+        if (R.play === "coop") await NET.set(CKEY(code), { created: NET.now() });
+        await NET.update(KEY(code), up);
+      } catch (err) { G().toast(netError(err)); }
     });
   }
   $("mpStart").addEventListener("click", (e) => startRoundAsHost(e.currentTarget));
@@ -385,8 +409,9 @@
     document.body.classList.add("in-match");
     $("stampBar").classList.add("hidden");
     $("rivals").innerHTML = "";
+    $("rivals").dataset.sig = "";
     $("rivals").classList.remove("hidden");
-    renderRivals();
+    if (isCoop()) renderCoopBar(); else renderRivals();
     window.dispatchEvent(new Event("resize"));
     const mode = R.mode, stage = R.stage || "japan", seed = `${R.seed}:${R.round}`, startAt = R.startAt || 0;
     const cd = $("countdown");
@@ -399,6 +424,7 @@
         cd.textContent = "スタート！";
         cd.style.fontSize = "56px";
         setTimeout(() => cd.classList.add("hidden"), 600);
+        if (isCoop()) { startCoopRound(mode, seed, stage); return; }
         G().start(mode, seed, hooks, stage);
         clearInterval(liveTimer);
         liveTimer = setInterval(pushLive, LIVE_EVERY);
@@ -464,6 +490,146 @@
       const card = $("rivals").querySelector(`[data-id="${CSS.escape(e.from)}"]`);
       if (card) { card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 1500); }
     }
+  }
+
+  // ---------- 協力モード ----------
+  // ホストのスマホが物理を計算し、箱の状態を COOP_EVERY ごとに配る。ほかの人は描くだけで、
+  // 自分の番のときは狙い（aim）と落とす・ホールドの操作をホストに送る。シャッフルはだれでもできる。
+  let coopUnsubs = [];
+  let coopTimer = null;
+  let turnPid = null;
+  let coopDrops = {};
+  let coopRoundHost = null;
+  let coopDone = new Set();
+  const coopOrder = () => participants().filter((p) => p.online !== false).sort((a, b) => (a.joined || 0) - (b.joined || 0));
+  const nameOf = (pid) => ((R && R.players && R.players[pid]) || {}).name || "だれか";
+
+  function startCoopRound(mode, seed, stage) {
+    stopCoop();
+    coopRoundHost = R.host;
+    coopDrops = {};
+    coopDone = new Set();
+    if (isHost()) {
+      G().startCoop("host", mode, seed, stage, coopHostHooks);
+      turnPid = (coopOrder()[0] || { id: PID }).id;
+      applyTurn();
+      coopUnsubs.push(NET.on(`${CKEY(code)}/cmd`, onCoopCmd));
+      coopUnsubs.push(NET.on(`${CKEY(code)}/aim`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("aim", a.x); }));
+      coopTimer = setInterval(pushCoop, COOP_EVERY);
+      pushCoop();
+    } else {
+      G().startCoop("client", mode, null, stage, coopClientHooks);
+      coopUnsubs.push(NET.on(`${CKEY(code)}/st`, (st) => {
+        if (!st || st.r !== myRound) return;
+        turnPid = st.turn;
+        coopDrops = st.dr || {};
+        G().coopSetTurn(st.tn, st.turn === PID);
+        G().coopApply(st);
+        renderCoopBar();
+      }));
+    }
+    renderCoopBar();
+  }
+  function stopCoop() {
+    coopUnsubs.forEach((u) => { try { u(); } catch { /* ignore */ } });
+    coopUnsubs = [];
+    clearInterval(coopTimer);
+    coopTimer = null;
+  }
+  function applyTurn() {
+    G().coopSetTurn(nameOf(turnPid), turnPid === PID);
+    renderCoopBar();
+  }
+  function advanceTurn() {
+    const order = coopOrder();
+    if (!order.length) return;
+    const i = order.findIndex((p) => p.id === turnPid);
+    turnPid = order[(i + 1) % order.length].id;
+    applyTurn();
+  }
+  function pushCoop(extra) {
+    if (!code || myRound < 0 || !isHost()) return;
+    const st = G().coopState();
+    if (!st) return;
+    st.r = myRound;
+    st.turn = turnPid;
+    st.tn = nameOf(turnPid);
+    st.dr = coopDrops;
+    NET.set(`${CKEY(code)}/st`, Object.assign(st, extra || {})).catch(() => {});
+  }
+  function onCoopCmd(v) {
+    for (const [id, c] of Object.entries(v || {})) {
+      if (coopDone.has(id)) continue;
+      coopDone.add(id);
+      NET.remove(`${CKEY(code)}/cmd/${id}`).catch(() => {});
+      if (!c || c.r !== myRound) continue;
+      if ((c.type === "drop" || c.type === "hold") && c.from !== turnPid) continue;
+      G().coopRemote(c.type, c.x);
+    }
+  }
+  function coopOnRoom() {
+    // ホストが抜けたら、この回はおしまい（箱の計算はホストのスマホでしているため）
+    if (coopRoundHost && R.host !== coopRoundHost && !finished) {
+      G().toast("ホストが抜けたので、協力プレイを終わります");
+      if (isHost()) NET.update(KEY(code), { state: "lobby" }).catch(() => {});
+      finished = true;
+      return;
+    }
+    if (isHost() && turnPid && R.players && (!R.players[turnPid] || R.players[turnPid].online === false)) advanceTurn();
+    renderCoopBar();
+  }
+  const coopHostHooks = {
+    coop: true,
+    onDrop() { coopDrops[turnPid] = (coopDrops[turnPid] || 0) + 1; advanceTurn(); pushCoop(); },
+    onStage() { pushCoop(); },
+    onEnd(cleared) {
+      finished = true;
+      pushCoop();
+      stopCoop();
+      const info = G().info;
+      NET.set(`${KEY(code)}/coopResult`, { r: myRound, cleared: !!cleared, score: info.score, drops: coopDrops }).catch(() => {});
+      setTimeout(() => { if (finished && code) { renderResult(); show("mpResult"); } }, cleared ? 0 : 700);
+    },
+  };
+  let lastAim = 0;
+  const coopClientHooks = {
+    coop: true,
+    cmd(type, x) {
+      if (!code) return;
+      if (type === "aim") {
+        const t = Date.now();
+        if (t - lastAim < 90) return;
+        lastAim = t;
+        NET.set(`${CKEY(code)}/aim/${PID}`, { x: Math.round(x * 10) / 10, t }).catch(() => {});
+        return;
+      }
+      const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      NET.set(`${CKEY(code)}/cmd/${id}`, { from: PID, type, x: x != null ? Math.round(x * 10) / 10 : null, r: myRound }).catch(() => {});
+    },
+    onEnd(cleared) {
+      finished = true;
+      stopCoop();
+      setTimeout(() => { if (finished && code) { renderResult(); show("mpResult"); } }, cleared ? 2600 : 900);
+    },
+  };
+  // 上の段: みんなの名前と、いまだれの番か
+  function renderCoopBar() {
+    const wrap = $("rivals");
+    if (!isCoop() || wrap.classList.contains("hidden")) return;
+    const order = coopOrder();
+    const sig = order.map((p) => p.id).join(",");
+    if (wrap.dataset.sig === sig) {
+      // 同じメンバーなら作り直さない（スタンプの吹き出しが消えないように）
+      for (const p of order) {
+        const el = wrap.querySelector(`[data-id="${CSS.escape(p.id)}"]`);
+        if (!el) continue;
+        el.classList.toggle("turn", p.id === turnPid);
+        el.querySelector(".cc-st").textContent = p.id === turnPid ? "▶ 番" : `${coopDrops[p.id] || 0}回`;
+      }
+      return;
+    }
+    wrap.dataset.sig = sig;
+    wrap.innerHTML = order.map((p) => `<div class="coop-chip${p.id === turnPid ? " turn" : ""}${p.id === PID ? " me" : ""}" data-id="${esc(p.id)}"><span class="cc-name">${esc(p.name)}${p.id === PID ? "（あなた）" : ""}</span><span class="cc-st">${p.id === turnPid ? "▶ 番" : `${coopDrops[p.id] || 0}回`}</span></div>`).join("");
   }
 
   // ---------- スタンプ ----------
@@ -585,8 +751,26 @@
       return (b.score || 0) - (a.score || 0);
     });
   }
+  function renderCoopResult() {
+    const res = R.coopResult && R.coopResult.r === R.round ? R.coopResult : null;
+    const order = participants().sort((a, b) => (a.joined || 0) - (b.joined || 0));
+    $("mpResultTitle").textContent = !res ? "けっか集計中…" : res.cleared ? "みんなで完成！" : "ざんねん…";
+    $("mpResultSub").textContent = `${order.length}人で協力・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}` + (res ? `・${res.score}点` : "");
+    const ol = $("mpRanking");
+    ol.innerHTML = "";
+    const drops = (res && res.drops) || {};
+    order.forEach((p) => {
+      const li = document.createElement("li");
+      if (p.id === PID) li.classList.add("me");
+      li.innerHTML = `<span class="rk">🤝</span><div class="who"><b>${esc(p.name)}${p.id === PID ? "（あなた）" : ""}</b><span>${drops[p.id] || 0}回 落とした</span></div>`;
+      ol.appendChild(li);
+    });
+    $("mpAgain").style.display = isHost() ? "" : "none";
+    msg("mpResultMsg", isHost() ? "" : "ホストが「もう一回」を押すと次が始まります", true);
+  }
   function renderResult() {
     if (!R) return;
+    if (isCoop()) { renderCoopResult(); return; }
     const list = ranked();
     const done = (p) => p.status === "clear" || p.status === "over" || p.status === "win" || p.online === false;
     const allDone = list.every(done);
@@ -622,6 +806,7 @@
 
   // ---------- leave ----------
   function stopPlaying() {
+    stopCoop();
     clearInterval(liveTimer);
     clearInterval(countdownTimer);
     $("countdown").classList.add("hidden");
@@ -654,7 +839,7 @@
     try {
       NET.cancelDisconnect && NET.cancelDisconnect(`${KEY(c)}/players/${PID}/online`);
       const others = Object.entries((room && room.players) || {}).filter(([id, p]) => id !== PID && p && p.online !== false);
-      if (!others.length) { await NET.remove(KEY(c)); return; }
+      if (!others.length) { await NET.remove(KEY(c)); NET.remove(CKEY(c)).catch(() => {}); return; }
       const up = { [`players/${PID}`]: null };
       if (room.host === PID) up.host = others.sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0))[0][0];
       await NET.update(KEY(c), up);

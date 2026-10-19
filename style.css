@@ -536,3 +536,16 @@ body.facts-off .fact-row { display: none; }
 .fact-row .fact.show { transform: translate(-50%, 0); }
 .fact-row .fact b { padding: 2px 8px; }
 .fact-row .fact span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* coop: players bar */
+.coop-chip {
+  flex: none; display: flex; flex-direction: column; justify-content: center;
+  background: var(--paper); border-radius: 12px; padding: 6px 12px;
+  box-shadow: 0 3px 0 rgba(59,50,38,.12); position: relative; min-width: 76px;
+  transition: background .25s, transform .25s;
+}
+.coop-chip .cc-name { font-size: 13px; font-weight: 800; white-space: nowrap; max-width: 7em; overflow: hidden; text-overflow: ellipsis; }
+.coop-chip .cc-st { font-size: 11px; font-weight: 800; color: var(--ink-soft); }
+.coop-chip.turn { background: #ffe1d9; transform: translateY(-2px); box-shadow: 0 4px 0 #e85d4a; }
+.coop-chip.turn .cc-st { color: #c2402f; }
+.coop-chip.me { outline: 2px solid var(--wood); }
