@@ -458,8 +458,9 @@
       if (!e || e.from === PID || e.round !== myRound) continue;
       if (e.type === "stamp") { showStamp(e); continue; }
       if (finished) continue;
-      G().attack(ATTACK_MS, e.name);
-      G().toast(`${e.name}さんが${e.rname || REGIONS[e.region] || ""}をそろえた！ 線が下がる！`, false);
+      // おじゃまピース（島）が「つぎ」に割り込む
+      const isl = G().addIsland();
+      G().toast(isl ? `${e.name}さんが${e.rname || REGIONS[e.region] || ""}をそろえた！ ${isl}が飛んできた！` : `${e.name}さんが${e.rname || ""}をそろえた！`, false);
       const card = $("rivals").querySelector(`[data-id="${CSS.escape(e.from)}"]`);
       if (card) { card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 1500); }
     }

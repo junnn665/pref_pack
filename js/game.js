@@ -38,10 +38,7 @@
   let OVER_LIMIT = MODES.normal.overLimit;
 
   // ---------- stages ----------
-  function buildStage(data, colors, info) {
-    const pieces = {};
-    let total = 0;
-    for (const p of data.prefs) {
+  function makePiece(p, color, stroke) {
       const polys = p.polys || [p.poly];
       const hulls = p.hulls || [p.hull];
       const path = new Path2D();
@@ -67,11 +64,17 @@
         while (pts.length > 3 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 0.5) pts.pop();
         return pts;
       }).filter((h) => h.length >= 3);
-      pieces[p.id] = {
-        ...p, path, hullPts, adjSet: new Set(p.adj),
-        color: colors[p.region], stroke: shade(colors[p.region], -0.28),
+      return {
+        ...p, path, hullPts, adjSet: new Set(p.adj || []),
+        color, stroke: stroke || shade(color, -0.28),
         bbox: { minX, minY, maxX, maxY },
       };
+  }
+  function buildStage(data, colors, info) {
+    const pieces = {};
+    let total = 0;
+    for (const p of data.prefs) {
+      pieces[p.id] = makePiece(p, colors[p.region]);
       total += p.area;
     }
     const [ew, eh] = data.extent;
@@ -135,6 +138,19 @@
   for (const st of ORDER.slice(1)) {
     const home = Object.values(STAGES[st].pieces).find((p) => p.key === (st === "asia" ? "JPN" : "HOME"));
     if (home) { home.color = "#f2c94c"; home.stroke = "#b0861a"; home.home = true; STAGES[st].homeId = home.id; }
+  }
+  // おじゃまピース（島）: 対戦で地方をそろえると相手に送られる。親の県（国）にくっつくと吸収される
+  for (const st of ORDER) {
+    const S = STAGES[st];
+    S.islands = [];
+    for (const p of ((window.ISLAND_DATA || {})[st] || {}).prefs || []) {
+      let parentId = p.parent;
+      if (p.parent === "HOME") parentId = S.homeId;
+      else if (typeof p.parent === "string") { const q = Object.values(S.pieces).find((x) => x.key === p.parent); parentId = q && q.id; }
+      if (parentId == null || !S.pieces[parentId]) continue;
+      S.pieces[p.id] = { ...makePiece(p, "#d9cfbd", "#8f826c"), island: true, parentId, region: -1 };
+      S.islands.push(p.id);
+    }
   }
   let ST = STAGES.japan;
 
@@ -352,6 +368,7 @@
     stageStart = now;
     current = null;
     pending = [];
+    absorbs = [];
     [ui.start, ui.menu, ui.result].forEach((el) => el.classList.add("hidden"));
     ui.stageTag.textContent = stageLabel();
     if (ST.homeId) {
@@ -470,11 +487,20 @@
       const pa = pair.bodyA.plugin && pair.bodyA.plugin.pid;
       const pb = pair.bodyB.plugin && pair.bodyB.plugin.pid;
       if (pa == null || pb == null) continue;
-      if (!ST.pieces[pa] || !ST.pieces[pa].adjSet.has(pb)) continue;
+      const A = ST.pieces[pa], B = ST.pieces[pb];
+      if (!A || !B) continue;
+      if (A.island || B.island) {
+        // 島は、親の県（国）の部分にふれると吸収される
+        if (A.island && A.parentId === pb) absorbs.push([a, pa, B]);
+        else if (B.island && B.parentId === pa) absorbs.push([b, pb, A]);
+        continue;
+      }
+      if (!A.adjSet.has(pb)) continue;
       pending.push([a, b, pa, pb]);
     }
   }
 
+  const isNeighbor = (hid, id) => (ST.pieces[hid].island ? ST.pieces[hid].parentId === id : ST.pieces[hid].adjSet.has(id));
   function adjacent(a, b) {
     for (const id of a.members) {
       const adj = ST.pieces[id].adjSet;
@@ -483,7 +509,28 @@
     return false;
   }
 
+  let absorbs = [];
+  function absorbIsland(g, iid, parent) {
+    if (g.dead) return;
+    g.dead = true;
+    Composite.remove(world, g.body);
+    groups = groups.filter((x) => x !== g);
+    const isl = ST.pieces[iid];
+    const bonus = 100 * lap;
+    score += bonus;
+    parts.merge += bonus;
+    const { x, y } = g.body.position;
+    fx.push({ type: "ring", t0: now, dur: 520, x, y, r0: 10, r1: 70, color: parent.color });
+    fx.push({ type: "text", t0: now, dur: 1100, x, y: y - 10, text: `${isl.name}→${parent.short} +${bonus}`, color: shade(parent.color, -0.4), size: 16 });
+    burst(x, y, 6, false, parent.color);
+    vibrate(15);
+    updateHud();
+  }
   function processMerges() {
+    if (absorbs.length) {
+      for (const [g, iid, parent] of absorbs) absorbIsland(g, iid, parent);
+      absorbs = [];
+    }
     if (!pending.length) return;
     const used = new Set();
     for (const [a, b, pa, pb] of pending) {
@@ -612,6 +659,12 @@
   }
 
   function completeStage(g) {
+    for (const ig of groups.slice()) {
+      if (ig !== g && [...ig.members].every((id) => ST.pieces[id].island)) {
+        ig.dead = true; Composite.remove(world, ig.body); groups = groups.filter((x) => x !== ig);
+        burst(ig.body.position.x, ig.body.position.y, 4, true);
+      }
+    }
     const secs = (now - stageStart) / 1000;
     const bonus = ST.clearBonus * lap;
     const tbonus = Math.max(0, Math.round((ST.par - secs) * 10)) * lap;
@@ -983,7 +1036,7 @@
     const hintId = MODES[mode].hint && current && !ended ? current.id : null;
     for (const g of groups) {
       ctx.save();
-      const hinted = hintId != null && [...g.members].some((id) => ST.pieces[hintId].adjSet.has(id));
+      const hinted = hintId != null && [...g.members].some((id) => isNeighbor(hintId, id));
       if (now < g.glowUntil) {
         ctx.shadowColor = g.glowColor;
         ctx.shadowBlur = 26 + 12 * Math.sin(now / 110);
@@ -1002,7 +1055,7 @@
         ctx.lineJoin = "round";
         ctx.lineWidth = (3.2 + Math.sin(now / 160)) / g.geom.s;
         ctx.strokeStyle = "#ffb400";
-        for (const id of g.members) if (ST.pieces[hintId].adjSet.has(id)) ctx.stroke(ST.pieces[id].path);
+        for (const id of g.members) if (isNeighbor(hintId, id)) ctx.stroke(ST.pieces[id].path);
       }
       ctx.restore();
     }
@@ -1138,7 +1191,8 @@
   }
   function drawNext() {
     const id = queue.length ? queue[0] : held;
-    ui.nextName.textContent = id != null && ST.pieces[id] ? ST.pieces[id].short : "—";
+    const np = id != null ? ST.pieces[id] : null;
+    ui.nextName.textContent = !np ? "—" : np.island ? `${np.short}→${ST.pieces[np.parentId].short}` : np.short;
     drawThumb(nextCanvas, id);
     drawHold();
   }
@@ -1455,6 +1509,20 @@
       shake = 10;
       vibrate([60, 40, 120]);
       later(() => endGame(false), 2000);
+    },
+    // 対戦: おじゃまピース（島）を「つぎ」に割り込ませる。送られた島の名前を返す
+    addIsland() {
+      if (!running || ended || locked || completeAt || !ST.islands.length) return null;
+      const onBoard = new Set(groups.flatMap((g) => [...g.members]));
+      const free = ST.islands.filter((id) => !onBoard.has(id) && !queue.includes(id) && held !== id && !(current && current.id === id));
+      const pool = free.length ? free : ST.islands;
+      const id = pool[(Math.random() * pool.length) | 0];
+      queue.unshift(id);
+      if (!current) nextPiece();
+      shake = Math.max(shake, 6);
+      vibrate([30, 40, 30]);
+      updateHud();
+      return ST.pieces[id].name;
     },
     attack(ms) {
       if (!running || ended) return;
