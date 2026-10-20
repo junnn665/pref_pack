@@ -30,7 +30,7 @@
   //  dropLimit: 1ピースを落とすまでの持ち時間(ms)。過ぎると今の位置で自動で落ちる
   const MODES = {
     normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000 },
-    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.65, hint: true, dropLimit: 12000 },
+    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.5, hint: true, dropLimit: 12000 },
   };
   let mode = "normal";
   let LINE_Y = MODES.normal.lineY;
