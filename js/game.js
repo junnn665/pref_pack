@@ -31,8 +31,8 @@
   const MODES = {
     normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000 },
     easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.5, hint: true, dropLimit: 12000 },
-    // 上級: 地図ガイドなし・名前なし（形だけで判断する）
-    hard:   { name: "上級", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000, noGuide: true, noNames: true },
+    // 鬼畜: 地図ガイドなし・名前なし・色もぜんぶ同じ（形だけで判断する）
+    hard:   { name: "鬼畜", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000, noGuide: true, noNames: true, mono: true },
   };
   let mode = "normal";
   let LINE_Y = MODES.normal.lineY;
@@ -564,41 +564,14 @@
         else if (B.island && (B.parentId === pa || (B.parentId === hid && a.members.has(hid)))) absorbs.push([b, pb, ST.pieces[B.parentId]]);
         continue;
       }
-      // 金色のかたまり（これまでのステージ）は、つながった国が小さくて見分けにくいので、
-      // 金色のどこにふれても、そのかたまりのどれかの国ととなりならくっつく
-      if (ST.homeId != null && (a.members.has(ST.homeId) || b.members.has(ST.homeId))) {
-        const pr = homePair(a, b);
-        if (pr) { pending.push([a, b, pr[0], pr[1]]); continue; }
-      }
-      if (A.adjSet.has(pb)) { pending.push([a, b, pa, pb]); continue; }
-      // 内陸の県・国: となりが全部ひとつのかたまりに入っていたら（穴の中にしか入れないので）、どこにふれても OK
-      const enc = enclosedPair(a, b) || enclosedPair(b, a);
-      if (enc) { pending.push(enc); continue; }
-      // 小さい県・国は、ぴったりその部分にふれなくても、ふれた所のすぐ近くにあれば OK
+
+      if (A.adjSet.has(pb)) { pending.push([a, b, pa, pb]); if (window.__mergeLog) window.__mergeLog.push(["part", pa, pb]); continue; }
+      // 小さい県・国は、ぴったりその部分にふれなくても、ふれた所のすぐ近くにあれば OK。
+      // 内陸の県・国（穴の中にしか入れない）や、小さくて見分けにくい所も、
+      // 「本来その県・国が入る場所」の近くにふれていれば OK（どこにふれてもくっつくわけではない）
       const near = nearPair(a, b, pair);
-      if (near) pending.push([a, b, near[0], near[1]]);
+      if (near) { pending.push([a, b, near[0], near[1]]); if (window.__mergeLog) window.__mergeLog.push(["near", near[0], near[1], near.why]); }
     }
-  }
-  // g の中に「となりが全部 g か h に入っていて、h にもとなりがある」県（国）があれば [g, h, その県, となり] を返す
-  function enclosedPair(g, h) {
-    for (const i of g.members) {
-      const P = ST.pieces[i];
-      if (!P || P.island || !P.adjSet.size) continue;
-      let hit = null, ok = true;
-      for (const j of P.adjSet) {
-        if (h.members.has(j)) { if (hit == null) hit = j; }
-        else if (!g.members.has(j)) { ok = false; break; }
-      }
-      if (ok && hit != null) return [g, h, i, hit];
-    }
-    return null;
-  }
-  function homePair(a, b) {
-    for (const i of a.members) {
-      const adj = ST.pieces[i].adjSet;
-      for (const j of b.members) if (adj.has(j)) return [i, j];
-    }
-    return null;
   }
   const NEAR_TOL = 12;
   function partsNear(g, x, y) {
@@ -612,10 +585,49 @@
     }
     return out;
   }
+  // かたまり g の中で、県・国 pid が入るはずの場所（画面上の座標）と、その大きさ
+  function slotOf(g, pid) {
+    const p = ST.pieces[pid];
+    const b = g.body, cos = Math.cos(b.angle), sin = Math.sin(b.angle);
+    const lx = (p.cx - g.geom.ox) * g.geom.s - g.local.x;
+    const ly = (p.cy - g.geom.oy) * g.geom.s - g.local.y;
+    const r = 0.5 * g.geom.s * Math.max(p.bbox.maxX - p.bbox.minX, p.bbox.maxY - p.bbox.minY);
+    return { x: b.position.x + lx * cos - ly * sin, y: b.position.y + lx * sin + ly * cos, r };
+  }
+  const SLOT_TOL = 16;
+  // g の県・国が、いまある場所と、h の中で本来入る場所が近いか（近ければ、ぴったりふれていなくても OK）
+  function slotPair(g, h) {
+    for (const i of g.members) {
+      const P = ST.pieces[i];
+      if (!P || P.island) continue;
+      let j = null;
+      for (const q of h.members) if (P.adjSet.has(q)) { j = q; break; }
+      if (j == null) continue;
+      const want = slotOf(h, i), at = slotOf(g, i);
+      const d = Math.hypot(want.x - at.x, want.y - at.y);
+      if (window.__slotLog) window.__slotLog.push([i, Math.round(d), Math.round(want.r), Math.round(at.r)]);
+      if (d <= Math.min(want.r, 90) + Math.min(at.r, 60) + SLOT_TOL) { const r = [i, j]; r.why = `slot d=${Math.round(d)}`; return r; }
+      // 内陸の県・国（となりが全部 h に入っている）は、穴の上からは入れないので、
+      // 入る場所の「真上あたり」に乗っていれば OK
+      let enclosed = true;
+      for (const q of P.adjSet) if (!h.members.has(q) && !g.members.has(q)) { enclosed = false; break; }
+      const dx = Math.abs(want.x - at.x), up = want.y - at.y;
+      if (enclosed && dx <= Math.min(want.r, 60) + Math.min(at.r, 60) * 0.6 + SLOT_TOL && up >= -SLOT_TOL && up <= Math.min(want.r, 90) + Math.min(at.r, 60) + 90) {
+        const r = [i, j]; r.why = `enclosed dx=${Math.round(dx)} up=${Math.round(up)}`; return r;
+      }
+    }
+    return null;
+  }
   function nearPair(a, b, pair) {
     if (!adjacent(a, b)) return null;
     const sp = pair.collision && pair.collision.supports && pair.collision.supports[0];
     if (!sp) return null;
+    // 小さいほうのかたまりの県・国が、大きいほうのかたまりの中の「入る場所」の近くにあるか
+    if (a.members.size <= b.members.size) { const sa = slotPair(a, b); if (sa) return sa; }
+    if (b.members.size <= a.members.size) {
+      const sb = slotPair(b, a);
+      if (sb) { const r = [sb[1], sb[0]]; r.why = sb.why; return r; }
+    }
     const na = partsNear(a, sp.x, sp.y);
     if (!na.size) return null;
     const nb = partsNear(b, sp.x, sp.y);
@@ -783,7 +795,7 @@
       el.innerHTML = "";
       const b = document.createElement("b");
       b.textContent = (flagsOn && flagOf(p) ? flagOf(p) + " " : "") + p.name;
-      b.style.background = p.color;
+      b.style.background = MODES[mode].mono ? MONO_FILL : p.color;
       const sp = document.createElement("span");
       sp.textContent = t;
       el.append(b, sp);
@@ -1026,8 +1038,11 @@
     }
   }
 
+  // 鬼畜モード: 地方の色で見分けられないように、ぜんぶ同じ色
+  const MONO_FILL = "#cdbd9f", MONO_STROKE = "#8f7d5f";
   function drawGroupShapes(c, members, geom, gold, alpha = 1, st = ST, flash = 0) {
     c.globalAlpha = alpha;
+    const mono = MODES[mode].mono;
     for (const id of members) {
       const p = st.pieces[id];
       if (gold) {
@@ -1037,7 +1052,7 @@
         gr.addColorStop(1, "#f6d260");
         c.fillStyle = gr;
       } else {
-        c.fillStyle = p.color;
+        c.fillStyle = mono && !p.home && !p.island ? MONO_FILL : p.color;
       }
       c.fill(p.path);
     }
@@ -1051,7 +1066,7 @@
     c.lineWidth = 1.6 / geom.s;
     for (const id of members) {
       const p = st.pieces[id];
-      c.strokeStyle = gold ? "#b0861a" : p.stroke;
+      c.strokeStyle = gold ? "#b0861a" : mono && !p.home && !p.island ? MONO_STROKE : p.stroke;
       c.stroke(p.path);
     }
     c.globalAlpha = 1;
@@ -1077,7 +1092,7 @@
     const noNames = MODES[mode].noNames;
     for (const id of members) {
       const p = ST.pieces[id];
-      if (noNames && !p.home) continue;   // 上級: 名前を出さない
+      if (noNames && !p.home) continue;   // 鬼畜: 名前を出さない
       const size = geom.s * Math.sqrt(p.area);
       if (size < 13) continue;
       let fs = Math.max(8, Math.min(15, size * 0.24));

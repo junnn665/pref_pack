@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261020-3">
+  <link rel="stylesheet" href="style.css?v=20261020-4">
 </head>
 <body>
   <div id="app">
@@ -85,7 +85,7 @@
             <li><b>協力</b>：みんなで1つの箱を使って、順番に1つずつ落とす。シャッフルはだれでもOK。傾けるのは番の人のスマホ</li>
             <li><b>チーム戦</b>：赤チームと青チームに分かれて、チームごとに1つの箱を順番に使う。先に完成させたチームの勝ち</li>
             <li><b>観戦</b>：「観戦で入る」と、遊ばずにみんなの箱を大きく見られる</li>
-            <li><b>上級</b>：地図ガイドなし・名前なし。形だけで判断しよう</li>
+            <li><b>鬼畜</b>：地図ガイドなし・名前なし・色も全部同じ。形だけで判断しよう</li>
             <li>くっつけた県・国は<b>図鑑</b>に登録される。条件を満たすと<b>バッジ</b>がもらえる</li>
             <li><b>対戦</b>：同じ順番で県が出る。ステージは日本〜世界、続けて遊ぶ「日本→アジア」「ぜんぶ」から選べる。先に完成させた人の勝ち。地方をそろえると、相手に<b>島（おじゃまピース）</b>が飛んでいく。島は親の県（佐渡島なら新潟）にくっつけると消えてボーナス</li>
           </ul>
@@ -99,14 +99,14 @@
             かんたん<small>ベスト <span id="bestEasy">0</span></small>
           </button>
         </div>
-        <button class="btn hard mode-btn" id="startHardBtn">上級<small>ベスト <span id="bestHard">0</span></small></button>
-        <p class="mode-note">かんたん：ピース少し小さめ・くっつく相手が光る／上級：地図ガイドなし・名前なし</p>
+        <button class="btn hard mode-btn" id="startHardBtn">👹 鬼畜<small>ベスト <span id="bestHard">0</span></small></button>
+        <p class="mode-note">かんたん：ピース少し小さめ・くっつく相手が光る／鬼畜：地図ガイドなし・名前なし・色も全部同じ</p>
         <div class="asia-box locked" id="asiaBox">
           <p class="section-label">エクストラステージ <span class="asia-badge">世界へ</span></p>
           <div class="seg m3" id="extraModeSeg">
             <button class="on" data-mode="normal">ふつう</button>
             <button data-mode="easy">かんたん</button>
-            <button data-mode="hard">上級</button>
+            <button data-mode="hard">鬼畜</button>
           </div>
           <div class="extra-stages" id="extraStages">
             <button class="btn vs" data-stage="asia">アジア</button>
@@ -135,7 +135,7 @@
         <div class="seg m3" id="rankSeg">
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
-          <button data-mode="hard">上級</button>
+          <button data-mode="hard">鬼畜</button>
         </div>
         <p class="mp-msg info" id="rankScreenMsg"></p>
         <ol class="rank-list" id="rankScreenList"></ol>
@@ -151,7 +151,7 @@
         <div class="seg m3" id="mpModeSeg">
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
-          <button data-mode="hard">上級</button>
+          <button data-mode="hard">鬼畜</button>
         </div>
         <div class="seg m3" id="mpPlaySeg">
           <button class="on" data-play="vs">⚔️ 対戦</button>
@@ -297,17 +297,17 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261020-3"></script>
-  <script src="js/prefs.js?v=20261020-3"></script>
-  <script src="js/asia.js?v=20261020-3"></script>
-  <script src="js/world.js?v=20261020-3"></script>
-  <script src="js/capitals.js?v=20261020-3"></script>
-  <script src="js/flags.js?v=20261020-3"></script>
-  <script src="js/facts.js?v=20261020-3"></script>
-  <script src="js/islands.js?v=20261020-3"></script>
-  <script src="js/game.js?v=20261020-3"></script>
-  <script src="lib/qrcode.min.js?v=20261020-3"></script>
-  <script src="js/dex.js?v=20261020-3"></script>
-  <script src="js/net.js?v=20261020-3"></script>
+  <script src="vendor/matter.min.js?v=20261020-4"></script>
+  <script src="js/prefs.js?v=20261020-4"></script>
+  <script src="js/asia.js?v=20261020-4"></script>
+  <script src="js/world.js?v=20261020-4"></script>
+  <script src="js/capitals.js?v=20261020-4"></script>
+  <script src="js/flags.js?v=20261020-4"></script>
+  <script src="js/facts.js?v=20261020-4"></script>
+  <script src="js/islands.js?v=20261020-4"></script>
+  <script src="js/game.js?v=20261020-4"></script>
+  <script src="lib/qrcode.min.js?v=20261020-4"></script>
+  <script src="js/dex.js?v=20261020-4"></script>
+  <script src="js/net.js?v=20261020-4"></script>
 </body>
 </html>
