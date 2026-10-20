@@ -30,7 +30,7 @@
   //  dropLimit: 1ピースを落とすまでの持ち時間(ms)。過ぎると今の位置で自動で落ちる
   const MODES = {
     normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000 },
-    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.4, hint: true, dropLimit: 12000 },
+    easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.65, hint: true, dropLimit: 12000 },
   };
   let mode = "normal";
   let LINE_Y = MODES.normal.lineY;
@@ -551,10 +551,27 @@
         if (pr) { pending.push([a, b, pr[0], pr[1]]); continue; }
       }
       if (A.adjSet.has(pb)) { pending.push([a, b, pa, pb]); continue; }
+      // 内陸の県・国: となりが全部ひとつのかたまりに入っていたら（穴の中にしか入れないので）、どこにふれても OK
+      const enc = enclosedPair(a, b) || enclosedPair(b, a);
+      if (enc) { pending.push(enc); continue; }
       // 小さい県・国は、ぴったりその部分にふれなくても、ふれた所のすぐ近くにあれば OK
       const near = nearPair(a, b, pair);
       if (near) pending.push([a, b, near[0], near[1]]);
     }
+  }
+  // g の中に「となりが全部 g か h に入っていて、h にもとなりがある」県（国）があれば [g, h, その県, となり] を返す
+  function enclosedPair(g, h) {
+    for (const i of g.members) {
+      const P = ST.pieces[i];
+      if (!P || P.island || !P.adjSet.size) continue;
+      let hit = null, ok = true;
+      for (const j of P.adjSet) {
+        if (h.members.has(j)) { if (hit == null) hit = j; }
+        else if (!g.members.has(j)) { ok = false; break; }
+      }
+      if (ok && hit != null) return [g, h, i, hit];
+    }
+    return null;
   }
   function homePair(a, b) {
     for (const i of a.members) {

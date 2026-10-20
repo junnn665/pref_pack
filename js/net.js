@@ -995,9 +995,9 @@
     if (!(await ensureNet())) { msg("rankMsg", netError("timeout")); return; }
     try {
       const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      // 部屋の自動おそうじの対象にならないように、遠い未来の作成日時を先に入れておく（アップデートしても消えない）
+      await NET.set(`${RANK}/created`, 9e15).catch(() => {});
       await NET.set(`${RANK}/${r.mode}/${id}`, { name, score: r.score, reached: r.reached || "", laps: r.laps || 1, pid: PID, t: NET.now() });
-      // 部屋の自動おそうじの対象にならないように、遠い未来の作成日時を入れておく
-      NET.set(`${RANK}/created`, 9e15).catch(() => {});
       $("rankSubmit").classList.add("done");
       myLastEntry = null;
       await loadResultRanking(r.mode, id, r.score);
