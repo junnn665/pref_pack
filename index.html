@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261020-2">
+  <link rel="stylesheet" href="style.css?v=20261020-3">
 </head>
 <body>
   <div id="app">
@@ -82,7 +82,11 @@
             <li>くっつくと、その県の<b>県庁所在地・名産</b>（国なら首都）が出る</li>
             <li><b>ホールド</b>で今のピースを取っておける（1回落とすまでに1回）</li>
             <li>1ピースの持ち時間は 8 秒（かんたんは 12 秒）。過ぎるとその場で自動で落ちる</li>
-            <li><b>協力</b>：みんなで1つの箱を使って、順番に1つずつ落とす。シャッフルはだれでもOK</li>
+            <li><b>協力</b>：みんなで1つの箱を使って、順番に1つずつ落とす。シャッフルはだれでもOK。傾けるのは番の人のスマホ</li>
+            <li><b>チーム戦</b>：赤チームと青チームに分かれて、チームごとに1つの箱を順番に使う。先に完成させたチームの勝ち</li>
+            <li><b>観戦</b>：「観戦で入る」と、遊ばずにみんなの箱を大きく見られる</li>
+            <li><b>上級</b>：地図ガイドなし・名前なし。形だけで判断しよう</li>
+            <li>くっつけた県・国は<b>図鑑</b>に登録される。条件を満たすと<b>バッジ</b>がもらえる</li>
             <li><b>対戦</b>：同じ順番で県が出る。ステージは日本〜世界、続けて遊ぶ「日本→アジア」「ぜんぶ」から選べる。先に完成させた人の勝ち。地方をそろえると、相手に<b>島（おじゃまピース）</b>が飛んでいく。島は親の県（佐渡島なら新潟）にくっつけると消えてボーナス</li>
           </ul>
         </details>
@@ -149,9 +153,10 @@
           <button data-mode="easy">かんたん</button>
           <button data-mode="hard">上級</button>
         </div>
-        <div class="seg" id="mpPlaySeg">
+        <div class="seg m3" id="mpPlaySeg">
           <button class="on" data-play="vs">⚔️ 対戦</button>
           <button data-play="coop">🤝 協力</button>
+          <button data-play="team">🚩 チーム戦</button>
         </div>
         <p class="section-label">ステージ</p>
         <div class="stage-grid" id="mpStageSeg">
@@ -176,6 +181,7 @@
         <label class="field">部屋番号<input id="mpCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4ケタ"></label>
         <label class="field">なまえ<input id="mpNameJ" maxlength="10" autocomplete="nickname" placeholder="例：じゅん"></label>
         <button class="btn primary" id="mpJoinGo">参加する</button>
+        <button class="btn" id="mpJoinWatch">👀 観戦で入る</button>
         <button class="btn" data-back>もどる</button>
         <p class="mp-msg" id="mpJoinMsg"></p>
       </div>
@@ -205,10 +211,26 @@
           <button data-stage="both">日本→アジア</button>
           <button data-stage="all" class="wide">ぜんぶつなげる（日本 → 世界）</button>
         </div>
+        <div class="seg team-pick" id="mpTeamPick">
+          <button data-team="A">🔴 赤チームに入る</button>
+          <button data-team="B">🔵 青チームに入る</button>
+        </div>
         <ul class="players" id="mpPlayers"></ul>
         <button class="btn primary" id="mpStart">スタート</button>
+        <button class="btn small" id="mpSpecToggle">👀 観戦する</button>
         <p class="mp-msg" id="mpLobbyMsg"></p>
         <button class="btn" id="mpLeave">部屋を出る</button>
+      </div>
+    </section>
+
+    <!-- 観戦 -->
+    <section class="overlay hidden" id="mpWatch">
+      <div class="card watch-card">
+        <h2>👀 観戦中</h2>
+        <p class="result-sub" id="mpWatchSub"></p>
+        <div class="watch-grid" id="mpWatchGrid"></div>
+        <p class="mp-msg info" id="mpWatchMsg"></p>
+        <button class="btn" id="mpWatchLeave">部屋を出る</button>
       </div>
     </section>
 
@@ -275,17 +297,17 @@
     </section>
   </div>
 
-  <script src="vendor/matter.min.js?v=20261020-2"></script>
-  <script src="js/prefs.js?v=20261020-2"></script>
-  <script src="js/asia.js?v=20261020-2"></script>
-  <script src="js/world.js?v=20261020-2"></script>
-  <script src="js/capitals.js?v=20261020-2"></script>
-  <script src="js/flags.js?v=20261020-2"></script>
-  <script src="js/facts.js?v=20261020-2"></script>
-  <script src="js/islands.js?v=20261020-2"></script>
-  <script src="js/game.js?v=20261020-2"></script>
-  <script src="lib/qrcode.min.js?v=20261020-2"></script>
-  <script src="js/dex.js?v=20261020-2"></script>
-  <script src="js/net.js?v=20261020-2"></script>
+  <script src="vendor/matter.min.js?v=20261020-3"></script>
+  <script src="js/prefs.js?v=20261020-3"></script>
+  <script src="js/asia.js?v=20261020-3"></script>
+  <script src="js/world.js?v=20261020-3"></script>
+  <script src="js/capitals.js?v=20261020-3"></script>
+  <script src="js/flags.js?v=20261020-3"></script>
+  <script src="js/facts.js?v=20261020-3"></script>
+  <script src="js/islands.js?v=20261020-3"></script>
+  <script src="js/game.js?v=20261020-3"></script>
+  <script src="lib/qrcode.min.js?v=20261020-3"></script>
+  <script src="js/dex.js?v=20261020-3"></script>
+  <script src="js/net.js?v=20261020-3"></script>
 </body>
 </html>

@@ -619,3 +619,15 @@ body.facts-off .fact-row { display: none; }
 .badge-toast small { display: block; font-size: 11px; font-weight: 800; opacity: .8; }
 .badge-toast b { font-size: 16px; }
 .seg.m3 { grid-template-columns: 1fr 1fr 1fr; }
+
+/* ---------- チーム戦・観戦 ---------- */
+.seg.team-pick button { font-size: 13px; padding: 9px 4px; }
+.rival.team-A { box-shadow: inset 0 0 0 2px #e85d4a; }
+.rival.team-B { box-shadow: inset 0 0 0 2px #3b82d8; }
+.watch-card { max-width: 560px; }
+.watch-grid { display: grid; gap: 8px; }
+.watch-cell { background: #f6efe2; border-radius: 14px; padding: 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.watch-cell canvas { width: 100%; aspect-ratio: 400 / 680; border-radius: 8px; background: #fffaf1; }
+.watch-cell .wc-name { font-weight: 800; font-size: 13px; line-height: 1.3; word-break: break-all; }
+.watch-cell .wc-sub { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.watch-cell .wc-score { color: var(--ink); }

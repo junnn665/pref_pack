@@ -19,7 +19,10 @@
   };
   const FIREBASE_VER = "10.12.2";
   const KEY = (code) => `rooms/pref-${code}`;
-  const CKEY = (code) => `rooms/pref-${code}-coop`;   // 協力モードの箱の状態・操作（部屋本体とは別にして通信を軽く）
+  // 協力モードの箱の状態・操作（部屋本体とは別にして通信を軽く）。チーム戦はチームごとに箱がある
+  const CKEY = (code, team) => `rooms/pref-${code}-coop${team ? `-${team}` : ""}`;
+  const TEAMS = ["A", "B"];
+  const TEAM_NAMES = { A: "🔴 赤チーム", B: "🔵 青チーム" };
   const COOP_EVERY = 120;
   const ATTACK_MS = 10000;
   const LIVE_EVERY = 1000;
@@ -124,7 +127,7 @@
   }
 
   // ---------- screens ----------
-  const OVERLAYS = ["startScreen", "menuScreen", "resultScreen", "rankScreen", "mpCreate", "mpJoin", "mpLobby", "mpResult"];
+  const OVERLAYS = ["startScreen", "menuScreen", "resultScreen", "rankScreen", "mpCreate", "mpJoin", "mpLobby", "mpResult", "mpWatch", "dexScreen"];
   function show(id) {
     OVERLAYS.forEach((o) => $(o).classList.toggle("hidden", o !== id));
   }
@@ -150,14 +153,22 @@
   let createPlay = "vs";
   let deadlineTimer = null;
   const AFTER_FIRST = (window.__prefAfterFirst || 60) * 1000;   // 対戦: だれかが完成してから、ほかの人が遊べる時間
-  const isCoop = () => !!R && R.play === "coop";
+  // 協力・チーム戦は、どちらも「みんなで1つの箱」を使う
+  const isCoop = () => !!R && (R.play === "coop" || R.play === "team");
+  const isTeam = () => !!R && R.play === "team";
+  const myTeam = () => (isTeam() && me() && me().team) || null;
+  // 箱の物理を計算する人（協力はホスト、チーム戦はチームごとの代表）
+  const boxHost = () => (isTeam() ? ((R.teams || {})[myTeam()] || {}).host : R && R.host);
+  const amBoxHost = () => !!R && boxHost() === PID;
+  const isSpec = () => !!(me() && me().spec);
+  const specCount = () => Object.values((R && R.players) || {}).filter((p) => p && p.spec && p.online !== false).length;
 
   const me = () => (R && R.players && R.players[PID]) || null;
   const isHost = () => !!R && R.host === PID;
   const participants = () => {
     if (!R || !R.players) return [];
     return Object.entries(R.players)
-      .filter(([, p]) => p && p.round === R.round)
+      .filter(([, p]) => p && !p.spec && p.round === R.round)
       .map(([id, p]) => ({ id, ...p }));
   };
   const inviteUrl = () => `${location.origin}${location.pathname}?room=${code}`;
@@ -215,7 +226,9 @@
     } catch (err) { msg("mpCreateMsg", netError(err)); }
   }));
 
-  $("mpJoinGo").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+  $("mpJoinGo").addEventListener("click", (e) => joinRoom(e.currentTarget, false));
+  $("mpJoinWatch").addEventListener("click", (e) => joinRoom(e.currentTarget, true));
+  const joinRoom = (btn, spec) => busy(btn, async () => {
     const c = $("mpCode").value.trim();
     const name = $("mpNameJ").value.trim().slice(0, 10);
     if (!/^\d{4}$/.test(c)) { msg("mpJoinMsg", "4ケタの部屋番号を入れてね"); return; }
@@ -227,10 +240,10 @@
       const room = await NET.get(KEY(c));
       if (!room || room.game !== "pref") { msg("mpJoinMsg", "その番号の部屋は見つかりませんでした"); return; }
       const prev = room.players && room.players[PID];
-      await NET.update(`${KEY(c)}/players/${PID}`, { name, joined: prev && prev.joined ? prev.joined : NET.now(), online: true });
+      await NET.update(`${KEY(c)}/players/${PID}`, { name, joined: prev && prev.joined ? prev.joined : NET.now(), online: true, spec: spec ? true : null });
       await enterRoom(c);
     } catch (err) { msg("mpJoinMsg", netError(err)); }
-  }));
+  });
 
   async function enterRoom(c) {
     code = c;
@@ -258,11 +271,20 @@
     if (mine.online === false && connected) NET.set(`${KEY(code)}/players/${PID}/online`, true).catch(() => {});
     maybeTakeHost();
 
+    if (mine.spec) {
+      // 観戦: 遊ばずに、みんなの箱を大きく見る
+      if (myRound !== -1) stopPlaying();
+      if (v.state === "playing") { startWatch(); renderWatch(); if (!isOpen("mpWatch") && !isOpen("menuScreen")) show("mpWatch"); }
+      else { stopWatch(); renderLobby(); if (!isOpen("mpLobby") && !isOpen("menuScreen")) show("mpLobby"); }
+      return;
+    }
+    stopWatch();
     if (v.state === "playing" && mine.round === v.round) {
       if (myRound !== v.round) startRound();
       handleEvents();
       if (isCoop()) {
         coopOnRoom();
+        if (isTeam()) { checkTeams(); renderTeamRivals(); }
         if (finished) renderResult();
       } else {
         checkLastPlace();
@@ -284,7 +306,7 @@
     const ps = R.players || {};
     const h = ps[R.host];
     if (h && h.online !== false) return;
-    const cands = Object.entries(ps).filter(([, p]) => p && p.online !== false).sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0));
+    const cands = Object.entries(ps).filter(([, p]) => p && p.online !== false && !p.spec).sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0));
     if (cands.length && cands[0][0] === PID) {
       const old = R.host;
       NET.tx(`${KEY(code)}/host`, (cur) => (cur === old || cur == null ? PID : undefined)).catch(() => {});
@@ -311,7 +333,12 @@
     $("mpLobbyStage").textContent = `ステージ：${STAGE_NAMES[R.stage || "japan"]}`;
     $("mpLobbyStageGrid").style.display = canEdit ? "" : "none";
     $("mpLobbyStageGrid").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.stage === (R.stage || "japan")));
-    $("mpLobbyPlay").textContent = `あそびかた：${isCoop() ? "協力（みんなで1つの箱）" : "対戦"}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpLobbyPlay").textContent = `あそびかた：${isTeam() ? "チーム戦（チームで1つの箱）" : isCoop() ? "協力（みんなで1つの箱）" : "対戦"}` + (canEdit ? "（タップで切りかえ）" : "");
+    $("mpTeamPick").style.display = isTeam() && R.state === "lobby" && !isSpec() ? "" : "none";
+    $("mpTeamPick").querySelectorAll("button").forEach((b) => b.classList.toggle("on", (me() || {}).team === b.dataset.team));
+    const specBtn = $("mpSpecToggle");
+    specBtn.style.display = !isHost() && (R.state === "lobby" || isSpec() || (me() || {}).round !== R.round) ? "" : "none";
+    specBtn.textContent = isSpec() ? "🎮 参加する（次の回から）" : "👀 観戦する";
     $("mpLobbyPlay").style.cursor = canEdit ? "pointer" : "";
 
 
@@ -319,16 +346,18 @@
     $("mpPlayers").innerHTML = ps.map(([id, p]) => {
       const tags = [];
       if (id === R.host) tags.push("ホスト");
+      if (p.spec) tags.push("👀 観戦");
+      else if (isTeam() && p.team) tags.push(TEAM_NAMES[p.team]);
       if (R.state === "playing" && p.round === R.round) tags.push(statusText(p));
       if (p.online === false) tags.push("通信切れ");
       return `<li class="${p.online === false ? "off" : ""}"><span class="dot"></span>${esc(p.name)}${id === PID ? "（あなた）" : ""}<span class="tag">${esc(tags.join("・"))}</span></li>`;
     }).join("");
 
-    const online = ps.filter(([, p]) => p.online !== false).length;
+    const online = ps.filter(([, p]) => p.online !== false && !p.spec).length;
     const startBtn = $("mpStart");
     if (R.state === "playing") {
       startBtn.style.display = "none";
-      msg("mpLobbyMsg", isCoop() ? "いま協力プレイ中です。次の回から参加できます" : "いま対戦中です。次の回から参加できます", true);
+      msg("mpLobbyMsg", (isTeam() ? "いまチーム戦の最中です。" : isCoop() ? "いま協力プレイ中です。" : "いま対戦中です。") + "次の回から参加できます（観戦もできます）", true);
     } else if (isHost()) {
       startBtn.style.display = "";
       msg("mpLobbyMsg", online < 2 ? "相手が入ってくるのを待とう（ひとりでも始められます）" : `${online}人そろったらスタート！`, true);
@@ -355,8 +384,18 @@
   });
   $("mpLobbyPlay").addEventListener("click", () => {
     if (!isHost() || !R || R.state !== "lobby") return;
-    NET.set(`${KEY(code)}/play`, isCoop() ? "vs" : "coop").catch(() => {});
+    NET.set(`${KEY(code)}/play`, { vs: "coop", coop: "team", team: "vs" }[R.play] || "vs").catch(() => {});
   });
+  $("mpTeamPick").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-team]");
+    if (!b || !R || R.state !== "lobby") return;
+    NET.set(`${KEY(code)}/players/${PID}/team`, b.dataset.team).catch(() => {});
+  });
+  $("mpSpecToggle").addEventListener("click", () => {
+    if (!R || isHost()) return;
+    NET.update(`${KEY(code)}/players/${PID}`, { spec: isSpec() ? null : true }).catch(() => {});
+  });
+  $("mpWatchLeave").addEventListener("click", () => leaveRoom());
   $("mpStageSeg").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-stage]");
     if (!b) return;
@@ -383,8 +422,25 @@
         state: "playing", round, seed: Math.random().toString(36).slice(2, 10),
         startAt: NET.now() + 3600, ev: null,
       };
+      // チーム戦: チームを決めていない人は人数の少ないほうへ。片方が空なら1人移す
+      const teamOf = {};
+      if (R.play === "team") {
+        const ps = Object.entries(R.players || {}).filter(([, p]) => p && p.online !== false && !p.spec).sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0));
+        const cnt = { A: 0, B: 0 };
+        for (const [id, p] of ps) if (TEAMS.includes(p.team)) { teamOf[id] = p.team; cnt[p.team]++; }
+        for (const [id] of ps) if (!teamOf[id]) { const t = cnt.A <= cnt.B ? "A" : "B"; teamOf[id] = t; cnt[t]++; }
+        for (const [t, o] of [["A", "B"], ["B", "A"]]) {
+          if (!cnt[t] && cnt[o] >= 2) { const mv = ps.filter(([id]) => teamOf[id] === o).pop()[0]; teamOf[mv] = t; cnt[t]++; cnt[o]--; }
+        }
+        up.teams = null;
+        for (const t of TEAMS) {
+          const host = ps.find(([id]) => teamOf[id] === t);
+          if (host) up[`teams/${t}`] = { host: host[0], status: "playing", score: 0, stage: firstStage(R.stage) };
+        }
+      }
       for (const [id, p] of Object.entries(R.players || {})) {
-        if (!p || p.online === false) continue;
+        if (!p || p.online === false || p.spec) continue;
+        if (teamOf[id]) up[`players/${id}/team`] = teamOf[id];
         up[`players/${id}/round`] = round;
         up[`players/${id}/status`] = "playing";
         up[`players/${id}/score`] = 0;
@@ -398,6 +454,7 @@
       up.endBy = null;
       try {
         if (R.play === "coop") await NET.set(CKEY(code), { created: NET.now() });
+        if (R.play === "team") await Promise.all(TEAMS.map((t) => NET.set(CKEY(code, t), { created: NET.now() })));
         await NET.update(KEY(code), up);
       } catch (err) { G().toast(netError(err)); }
     });
@@ -408,7 +465,7 @@
   $("mpToLobby").addEventListener("click", (e) => {
     if (!isHost() || !R) return;
     busy(e.currentTarget, async () => {
-      try { await NET.update(KEY(code), { state: "lobby", endBy: null, ev: null }); } catch (err) { G().toast(netError(err)); }
+      try { await NET.update(KEY(code), { state: "lobby", endBy: null, ev: null, teams: null }); } catch (err) { G().toast(netError(err)); }
     });
   });
 
@@ -442,7 +499,7 @@
         if (isCoop()) { startCoopRound(mode, seed, stage); return; }
         G().start(mode, seed, hooks, stage);
         clearInterval(liveTimer);
-        liveTimer = setInterval(pushLive, LIVE_EVERY);
+        liveTimer = setInterval(pushLive, specCount() ? 500 : LIVE_EVERY);
         pushLive();
         return;
       }
@@ -533,6 +590,13 @@
       if (!e || e.from === PID || e.round !== myRound) continue;
       if (e.type === "stamp") { showStamp(e); continue; }
       if (finished) continue;
+      if (isTeam()) {
+        // チーム戦: 相手チームが地方をそろえたら、こちらの箱に島が来る（箱の代表が入れる）
+        if (!e.team || e.team === myTeam()) continue;
+        const isl = amBoxHost() ? G().addIsland() : null;
+        G().toast(isl ? `${e.name}が${e.rname || ""}をそろえた！ ${isl}が飛んできた！` : `${e.name}が${e.rname || ""}をそろえた！`, false);
+        continue;
+      }
       // おじゃまピース（島）が「つぎ」に割り込む
       const isl = G().addIsland();
       G().toast(isl ? `${e.name}さんが${e.rname || REGIONS[e.region] || ""}をそろえた！ ${isl}が飛んできた！` : `${e.name}さんが${e.rname || ""}をそろえた！`, false);
@@ -550,26 +614,28 @@
   let coopDrops = {};
   let coopRoundHost = null;
   let coopDone = new Set();
-  const coopOrder = () => participants().filter((p) => p.online !== false).sort((a, b) => (a.joined || 0) - (b.joined || 0));
+  const coopOrder = () => participants().filter((p) => p.online !== false && (!isTeam() || p.team === myTeam())).sort((a, b) => (a.joined || 0) - (b.joined || 0));
+  const CK = () => CKEY(code, myTeam());
   const nameOf = (pid) => ((R && R.players && R.players[pid]) || {}).name || "だれか";
 
   function startCoopRound(mode, seed, stage) {
     stopCoop();
-    coopRoundHost = R.host;
+    coopRoundHost = boxHost();
     coopDrops = {};
     coopDone = new Set();
-    if (isHost()) {
+    lastTeamLive = 0;
+    if (amBoxHost()) {
       G().startCoop("host", mode, seed, stage, coopHostHooks);
       turnPid = (coopOrder()[0] || { id: PID }).id;
       applyTurn();
-      coopUnsubs.push(NET.on(`${CKEY(code)}/cmd`, onCoopCmd));
-      coopUnsubs.push(NET.on(`${CKEY(code)}/aim`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("aim", a.x); }));
-      coopUnsubs.push(NET.on(`${CKEY(code)}/tilt`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("tilt", a.g); }));
+      coopUnsubs.push(NET.on(`${CK()}/cmd`, onCoopCmd));
+      coopUnsubs.push(NET.on(`${CK()}/aim`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("aim", a.x); }));
+      coopUnsubs.push(NET.on(`${CK()}/tilt`, (v) => { const a = v && v[turnPid]; if (a && turnPid !== PID) G().coopRemote("tilt", a.g); }));
       coopTimer = setInterval(pushCoop, COOP_EVERY);
       pushCoop();
     } else {
       G().startCoop("client", mode, null, stage, coopClientHooks);
-      coopUnsubs.push(NET.on(`${CKEY(code)}/st`, (st) => {
+      coopUnsubs.push(NET.on(`${CK()}/st`, (st) => {
         if (!st || st.r !== myRound) return;
         turnPid = st.turn;
         coopDrops = st.dr || {};
@@ -598,20 +664,25 @@
     applyTurn();
   }
   function pushCoop(extra) {
-    if (!code || myRound < 0 || !isHost()) return;
+    if (!code || myRound < 0 || !amBoxHost()) return;
     const st = G().coopState();
     if (!st) return;
     st.r = myRound;
     st.turn = turnPid;
     st.tn = nameOf(turnPid);
     st.dr = coopDrops;
-    NET.set(`${CKEY(code)}/st`, Object.assign(st, extra || {})).catch(() => {});
+    NET.set(`${CK()}/st`, Object.assign(st, extra || {})).catch(() => {});
+    // チーム戦: 相手チームと観戦の人に、こちらの箱のようすを送る
+    if (isTeam() && Date.now() - lastTeamLive > (specCount() ? 500 : LIVE_EVERY)) {
+      lastTeamLive = Date.now();
+      pushTeamLive();
+    }
   }
   function onCoopCmd(v) {
     for (const [id, c] of Object.entries(v || {})) {
       if (coopDone.has(id)) continue;
       coopDone.add(id);
-      NET.remove(`${CKEY(code)}/cmd/${id}`).catch(() => {});
+      NET.remove(`${CK()}/cmd/${id}`).catch(() => {});
       if (!c || c.r !== myRound) continue;
       if ((c.type === "drop" || c.type === "hold") && c.from !== turnPid) continue;
       G().coopRemote(c.type, c.x);
@@ -619,23 +690,42 @@
   }
   function coopOnRoom() {
     // ホストが抜けたら、この回はおしまい（箱の計算はホストのスマホでしているため）
-    if (coopRoundHost && R.host !== coopRoundHost && !finished) {
+    if (isTeam()) {
+      // チーム戦: 箱の代表が抜けたら、そのチームはここまで
+      const h = coopRoundHost && R.players && R.players[coopRoundHost];
+      if (coopRoundHost && (!h || h.online === false) && !finished) {
+        G().toast("チームの代表が抜けたので、このチームはここまでです");
+        NET.update(`${KEY(code)}/teams/${myTeam()}`, { status: "over", finishAt: NET.now() }).catch(() => {});
+        finished = true;
+        G().stop();
+        setTimeout(() => { if (code) { renderResult(); show("mpResult"); } }, 300);
+        return;
+      }
+    } else if (coopRoundHost && R.host !== coopRoundHost && !finished) {
       G().toast("ホストが抜けたので、協力プレイを終わります");
       if (isHost()) NET.update(KEY(code), { state: "lobby" }).catch(() => {});
       finished = true;
       return;
     }
-    if (isHost() && turnPid && R.players && (!R.players[turnPid] || R.players[turnPid].online === false)) advanceTurn();
+    if (amBoxHost() && turnPid && R.players && (!R.players[turnPid] || R.players[turnPid].online === false)) advanceTurn();
     renderCoopBar();
   }
   const coopHostHooks = {
     coop: true,
     onDrop() { coopDrops[turnPid] = (coopDrops[turnPid] || 0) + 1; advanceTurn(); pushCoop(); },
-    onStage() { pushCoop(); },
-    onEnd(cleared) {
+    onStage() { pushCoop(); if (isTeam()) pushTeamLive(); },
+    // チーム戦: 地方をそろえたら相手チームに島を送る
+    onRegion(ri, rname) {
+      if (!code || !isTeam()) return;
+      const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      NET.set(`${KEY(code)}/ev/${id}`, { from: PID, team: myTeam(), name: TEAM_NAMES[myTeam()], type: "line", region: ri, rname: rname || "", round: myRound, t: NET.now() }).catch(() => {});
+    },
+    amFirst() { return isTeam() && !Object.entries(R.teams || {}).some(([t, v]) => t !== myTeam() && v && v.status === "clear"); },
+    onEnd(cleared, _score, extra) {
       finished = true;
       pushCoop();
       stopCoop();
+      if (isTeam()) pushTeamLive(cleared ? "clear" : extra && extra.winner ? "win" : "over");
       const info = G().info;
       NET.set(`${KEY(code)}/coopResult`, { r: myRound, cleared: !!cleared, score: info.score, drops: coopDrops }).catch(() => {});
       setTimeout(() => { if (finished && code) { renderResult(); show("mpResult"); } }, cleared ? 0 : 700);
@@ -647,18 +737,18 @@
     cmd(type, x) {
       if (!code) return;
       if (type === "tilt") {
-        NET.set(`${CKEY(code)}/tilt/${PID}`, { g: x, t: Date.now() }).catch(() => {});
+        NET.set(`${CK()}/tilt/${PID}`, { g: x, t: Date.now() }).catch(() => {});
         return;
       }
       if (type === "aim") {
         const t = Date.now();
         if (t - lastAim < 90) return;
         lastAim = t;
-        NET.set(`${CKEY(code)}/aim/${PID}`, { x: Math.round(x * 10) / 10, t }).catch(() => {});
+        NET.set(`${CK()}/aim/${PID}`, { x: Math.round(x * 10) / 10, t }).catch(() => {});
         return;
       }
       const id = NET.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      NET.set(`${CKEY(code)}/cmd/${id}`, { from: PID, type, x: x != null ? Math.round(x * 10) / 10 : null, r: myRound }).catch(() => {});
+      NET.set(`${CK()}/cmd/${id}`, { from: PID, type, x: x != null ? Math.round(x * 10) / 10 : null, r: myRound }).catch(() => {});
     },
     onEnd(cleared) {
       finished = true;
@@ -666,6 +756,177 @@
       setTimeout(() => { if (finished && code) { renderResult(); show("mpResult"); } }, cleared ? 2600 : 900);
     },
   };
+  // ---------- チーム戦 ----------
+  let lastTeamLive = 0;
+  function pushTeamLive(finalStatus) {
+    if (!code || !isTeam() || !amBoxHost()) return;
+    const info = G().info;
+    const up = { score: info.score, left: info.left, board: JSON.stringify(G().snapshot()), stage: info.stage, lineDown: !!info.lineDown };
+    if (finalStatus) { up.status = finalStatus; up.finishAt = NET.now(); }
+    NET.update(`${KEY(code)}/teams/${myTeam()}`, up).catch(() => {});
+  }
+  // 相手チームが全部完成 → GAME OVER ／ 相手チームが全部ゲームオーバーで点数も上 → WINNER（箱の代表が判定）
+  function checkTeams() {
+    if (finished || myRound < 0 || !amBoxHost() || !G().info.running) return;
+    const others = Object.entries(R.teams || {}).filter(([t, v]) => t !== myTeam() && v);
+    if (!others.length) return;
+    if (others.every(([, v]) => v.status === "clear")) { G().gameOver(`${TEAM_NAMES[others[0][0]]}が先に完成させた`); return; }
+    if (others.every(([, v]) => v.status === "over") && G().info.score > Math.max(...others.map(([, v]) => v.score || 0))) {
+      G().winner(`${TEAM_NAMES[others[0][0]]}がゲームオーバー`);
+    }
+  }
+  function teamStatusText(v) {
+    if (!v) return "";
+    if (v.status === "clear") return "完成！";
+    if (v.status === "win") return "勝ち確定";
+    if (v.status === "over") return "ゲームオーバー";
+    const sn = isChain(R.stage) && v.stage ? `${STAGE_NAMES[v.stage] || ""}・` : "";
+    return v.left == null ? `${sn}スタート` : `${sn}のこり${v.left}`;
+  }
+  const teamMembers = (t) => participants().filter((p) => p.team === t).sort((a, b) => (a.joined || 0) - (b.joined || 0));
+  // 上の段の右に、相手チームの箱を出す
+  function renderTeamRivals() {
+    const wrap = $("rivals");
+    if (!isTeam() || wrap.classList.contains("hidden")) return;
+    for (const t of TEAMS) {
+      if (t === myTeam()) continue;
+      const v = (R.teams || {})[t];
+      let card = wrap.querySelector(`[data-team="${t}"]`);
+      if (!v) { if (card) card.remove(); continue; }
+      if (!card) {
+        card = document.createElement("div");
+        card.className = `rival team-${t}`;
+        card.dataset.team = t;
+        card.appendChild(boardCanvas());
+        card.insertAdjacentHTML("beforeend", '<div><div class="r-name"></div><div class="r-score"></div><div class="r-st"></div></div>');
+        wrap.appendChild(card);
+      }
+      card.querySelector(".r-name").textContent = TEAM_NAMES[t];
+      card.querySelector(".r-score").textContent = v.score || 0;
+      card.querySelector(".r-st").textContent = teamStatusText(v);
+      card.classList.toggle("over", v.status === "over");
+      card.classList.toggle("clear", v.status === "clear");
+      drawBoardFor(card.querySelector("canvas"), v);
+    }
+  }
+  function rankedTeams() {
+    return Object.entries(R.teams || {}).filter(([, v]) => v).map(([t, v]) => ({ t, ...v })).sort((a, b) => {
+      const ac = a.status === "clear" || a.status === "win", bc = b.status === "clear" || b.status === "win";
+      if (ac !== bc) return ac ? -1 : 1;
+      if (a.status === "clear" && b.status === "clear") return (a.finishAt || 0) - (b.finishAt || 0);
+      return (b.score || 0) - (a.score || 0);
+    });
+  }
+  function renderTeamResult() {
+    const list = rankedTeams();
+    const done = (v) => v.status === "clear" || v.status === "over" || v.status === "win";
+    const allDone = list.length > 0 && list.every(done);
+    const myRank = list.findIndex((v) => v.t === myTeam()) + 1;
+    $("mpResultTitle").textContent = !allDone ? "相手チームを待っています…" : myRank === 1 ? "チームの勝ち！" : "チームの負け…";
+    $("mpResultSub").textContent = `チーム戦・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}`;
+    if (allDone && myRank === 1 && list.length > 1 && window.PrefDex) window.PrefDex.badge("team_win");
+    const ol = $("mpRanking");
+    ol.innerHTML = "";
+    list.forEach((v, i) => {
+      const li = document.createElement("li");
+      if (v.t === myTeam()) li.classList.add("me");
+      li.innerHTML = `<span class="rk">${done(v) ? i + 1 : "…"}</span>`;
+      const cv = boardCanvas();
+      li.appendChild(cv);
+      const names = teamMembers(v.t).map((p) => p.name + (p.id === PID ? "（あなた）" : "")).join("・");
+      li.insertAdjacentHTML("beforeend", `<div class="who"><b>${esc(TEAM_NAMES[v.t])}</b><span>${esc(teamStatusText(v))}・${esc(names)}</span></div><span class="pts">${v.score || 0}</span>`);
+      ol.appendChild(li);
+      drawBoardFor(cv, v);
+    });
+    $("mpAgain").style.display = isHost() ? "" : "none";
+    $("mpToLobby").style.display = isHost() ? "" : "none";
+    msg("mpResultMsg", isHost() ? "" : "ホストが「もう一回」を押すと次が始まります（モードやステージが変わることもあります）", true);
+  }
+
+  // ---------- 観戦 ----------
+  let watchUnsubs = [];
+  let watchKey = null;
+  const watchSt = {};
+  function stopWatch() {
+    watchUnsubs.forEach((u) => { try { u(); } catch { /* ignore */ } });
+    watchUnsubs = [];
+    watchKey = null;
+  }
+  // 協力・チーム戦は箱の状態（0.12 秒ごと）を直接見る。対戦は各自のようす（0.5 秒ごと）を見る
+  function startWatch() {
+    const key = `${R.round}:${R.play}`;
+    if (watchKey === key) return;
+    stopWatch();
+    watchKey = key;
+    for (const k of Object.keys(watchSt)) delete watchSt[k];
+    const subs = R.play === "coop" ? [[null, CKEY(code)]] : R.play === "team" ? TEAMS.map((t) => [t, CKEY(code, t)]) : [];
+    for (const [t, path] of subs) {
+      watchUnsubs.push(NET.on(`${path}/st`, (st) => {
+        if (!st || st.r !== R.round) return;
+        watchSt[t || "coop"] = st;
+        renderWatch();
+      }));
+    }
+  }
+  let watchCells = {};
+  function watchBoards() {
+    if (R.play === "coop") {
+      const st = watchSt.coop || {};
+      const order = participants().sort((a, b) => (a.joined || 0) - (b.joined || 0));
+      return [{ id: "coop", name: `🤝 ${order.map((p) => p.name).join("・")}`, score: st.score || 0, st: st.ended ? (st.cl ? "完成！" : "おわり") : st.tn ? `▶ ${st.tn}さんの番` : "", snap: st.s, stage: st.stage, lineDown: false }];
+    }
+    if (R.play === "team") {
+      return TEAMS.filter((t) => (R.teams || {})[t]).map((t) => {
+        const st = watchSt[t] || {}, v = R.teams[t];
+        return { id: t, name: `${TEAM_NAMES[t]}（${teamMembers(t).map((p) => p.name).join("・")}）`, score: st.score != null ? st.score : v.score || 0,
+          st: teamStatusText(v) + (st.tn && v.status === "playing" ? `・▶ ${st.tn}` : ""), snap: st.s || v.board, stage: st.stage || v.stage, lineDown: !!v.lineDown };
+      });
+    }
+    return participants().sort((a, b) => (a.joined || 0) - (b.joined || 0)).map((p) => ({ id: p.id, name: p.name, score: p.score || 0, st: statusText(p), snap: p.board, stage: p.stage, lineDown: !!p.lineDown }));
+  }
+  let watchRaf = 0;
+  function renderWatch() {
+    if (watchRaf) return;
+    watchRaf = requestAnimationFrame(() => { watchRaf = 0; drawWatch(); });
+  }
+  function drawWatch() {
+    if (!R || !code) return;
+    const boards = watchBoards();
+    const grid = $("mpWatchGrid");
+    const cols = boards.length <= 1 ? 1 : boards.length <= 4 ? 2 : 3;
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    const sig = boards.map((b) => b.id).join(",") + `|${cols}`;
+    if (grid.dataset.sig !== sig) {
+      grid.dataset.sig = sig;
+      grid.innerHTML = "";
+      watchCells = {};
+      for (const b of boards) {
+        const cell = document.createElement("div");
+        cell.className = "watch-cell";
+        cell.innerHTML = '<canvas></canvas><div class="wc-name"></div><div class="wc-sub"><b class="wc-score"></b><span class="wc-st"></span></div>';
+        grid.appendChild(cell);
+        watchCells[b.id] = cell;
+      }
+    }
+    const DPRW = Math.min(window.devicePixelRatio || 1, 2);
+    for (const b of boards) {
+      const cell = watchCells[b.id];
+      if (!cell) continue;
+      const cv = cell.querySelector("canvas");
+      const w = cv.clientWidth || 160;
+      const pw = Math.round(w * DPRW), ph = Math.round(pw * 680 / 400);
+      if (cv.width !== pw) { cv.width = pw; cv.height = ph; }
+      let snap = [];
+      try { snap = b.snap ? (typeof b.snap === "string" ? JSON.parse(b.snap) : b.snap) : []; } catch { /* ignore */ }
+      G().drawBoard(cv, snap, { mode: R.mode, lineDown: b.lineDown, stage: b.stage || firstStage(R.stage) });
+      cell.querySelector(".wc-name").textContent = b.name;
+      cell.querySelector(".wc-score").textContent = `${b.score}点`;
+      cell.querySelector(".wc-st").textContent = b.st || "";
+    }
+    $("mpWatchSub").textContent = `${R.play === "team" ? "チーム戦" : R.play === "coop" ? "協力" : "対戦"}・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}`;
+    msg("mpWatchMsg", "観戦中です。次の回から参加するときは、待合室で「参加する」を押してね", true);
+  }
+
   // 上の段: みんなの名前と、いまだれの番か
   function renderCoopBar() {
     const wrap = $("rivals");
@@ -826,6 +1087,7 @@
   }
   function renderResult() {
     if (!R) return;
+    if (isTeam()) { renderTeamResult(); return; }
     if (isCoop()) { renderCoopResult(); return; }
     const list = ranked();
     const dl = deadline();
@@ -891,6 +1153,7 @@
     R = null;
     ss.set("pref_room", null);
     if (unsub) { unsub(); unsub = null; }
+    stopWatch();
     stopPlaying();
     document.body.classList.remove("multi");
     show("startScreen");
@@ -905,7 +1168,7 @@
     try {
       NET.cancelDisconnect && NET.cancelDisconnect(`${KEY(c)}/players/${PID}/online`);
       const others = Object.entries((room && room.players) || {}).filter(([id, p]) => id !== PID && p && p.online !== false);
-      if (!others.length) { await NET.remove(KEY(c)); NET.remove(CKEY(c)).catch(() => {}); return; }
+      if (!others.length) { await NET.remove(KEY(c)); [null, ...TEAMS].forEach((t) => NET.remove(CKEY(c, t)).catch(() => {})); return; }
       const up = { [`players/${PID}`]: null };
       if (room.host === PID) up.host = others.sort((a, b) => (a[1].joined || 0) - (b[1].joined || 0))[0][0];
       await NET.update(KEY(c), up);
