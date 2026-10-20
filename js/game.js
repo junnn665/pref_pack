@@ -31,6 +31,8 @@
   const MODES = {
     normal: { name: "ふつう", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000 },
     easy:   { name: "かんたん", exp: 0.257, lineY: 142, overLimit: 3000, neighbor: 0.5, hint: true, dropLimit: 12000 },
+    // 上級: 地図ガイドなし・名前なし（形だけで判断する）
+    hard:   { name: "上級", exp: 0.232, lineY: 150, overLimit: 2200, neighbor: 0, hint: false, dropLimit: 8000, noGuide: true, noNames: true },
   };
   let mode = "normal";
   let LINE_Y = MODES.normal.lineY;
@@ -174,7 +176,7 @@
     score: $("score"), remain: $("remain"), nextName: $("nextName"), stageTag: $("stageTag"),
     shuffleBtn: $("shuffleBtn"), toast: $("toast"),
     start: $("startScreen"), menu: $("menuScreen"), result: $("resultScreen"),
-    bestNormal: $("bestNormal"), bestEasy: $("bestEasy"),
+    bestNormal: $("bestNormal"), bestEasy: $("bestEasy"), bestHard: $("bestHard"),
     resultTitle: $("resultTitle"), resultSub: $("resultSub"), resultScore: $("resultScore"),
     resultRegions: $("resultRegions"), resultBreakdown: $("resultBreakdown"), newBest: $("newBest"),
   };
@@ -194,7 +196,7 @@
   let canDropAt = 0;
   let score = 0;
   let parts = null;          // スコアの内訳
-  const best = { normal: store.get("prefpack.best.normal", store.get("prefpack.best", 0)), easy: store.get("prefpack.best.easy", 0) };
+  const best = { normal: store.get("prefpack.best.normal", store.get("prefpack.best", 0)), easy: store.get("prefpack.best.easy", 0), hard: store.get("prefpack.best.hard", 0) };
   let shuffleReadyAt = 0;
   let shufflesUsed = 0;
   let regionsDone = new Set();
@@ -238,7 +240,21 @@
   }
 
   showBest();
-  function showBest() { ui.bestNormal.textContent = best.normal; ui.bestEasy.textContent = best.easy; }
+  function showBest() { ui.bestNormal.textContent = best.normal; ui.bestEasy.textContent = best.easy; if (ui.bestHard) ui.bestHard.textContent = best.hard; }
+
+  // ---------- 国旗 ----------
+  function flagOf(p) {
+    const a2 = p && !p.island && p.key && (window.FLAG_A2 || {})[p.key];
+    return a2 ? String.fromCodePoint(...[...a2].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : "";
+  }
+  // ---------- 図鑑・バッジ（js/dex.js） ----------
+  const dex = (fn, ...a) => { try { if (window.PrefDex) window.PrefDex[fn](...a); } catch (e) { console.warn(e); } };
+  function collect(members) {
+    const ids = [...members].filter((id) => { const p = ST.pieces[id]; return p && !p.home && !p.island; });
+    if (ids.length) dex("collect", ST.key, ids);
+  }
+  let holdsUsed = 0;
+  let stageShuffle0 = 0, stageHold0 = 0;
 
   // ---------- groups ----------
   // 1つのかたまりの大きさの上限（アジア以降。ロシアやユーラシアが大きすぎて詰まないように）
@@ -395,7 +411,10 @@
       parts = { merge: 0, region: 0, clear: 0, time: 0 };
       cleared = [];
       shufflesUsed = 0;
+      holdsUsed = 0;
     }
+    stageShuffle0 = shufflesUsed;
+    stageHold0 = holdsUsed;
     shuffleReadyAt = 0;
     regionsDone = new Set();
     overTimer = 0;
@@ -506,6 +525,7 @@
     if (!running || paused || ended || locked || completeAt || !current) return;
     if (holdUsed) { toast("ホールドは1回落とすまで1回だけ"); return; }
     holdUsed = true;
+    holdsUsed++;
     if (held == null) {
       held = current.id;
       current = null;
@@ -631,6 +651,7 @@
     fx.push({ type: "text", t0: now, dur: 1100, x, y: y - 10, text: `${isl.name}→${parent.short} +${bonus}`, color: shade(parent.color, -0.4), size: 16 });
     burst(x, y, 6, false, parent.color);
     vibrate(15);
+    if (!coop) dex("badge", "island");
     updateHud();
   }
   function processMerges() {
@@ -694,6 +715,8 @@
     emit({ t: "m", x: Math.round(x), y: Math.round(y), z: Math.round(size), n: members.length, c: color, g: gained, k: combo, f: [...(a.members.size <= b.members.size ? a : b).members] });
 
     showFact(a.members.size <= b.members.size ? a : b);
+    collect(members);
+    if (combo >= 5 && !coop) dex("badge", "combo5");
     checkRegions(g);
     if (g.gold) completeStage(g);
     updateHud();
@@ -737,10 +760,11 @@
 
   // ---------- 豆知識（くっついたピースの県庁所在地・名産／首都） ----------
   let factsOn = store.get("prefpack.facts", true);
+  const flagsOn = true;
   let factShown = new Set();
   let factTimer = 0;
-  function factText(p) {
-    if (ST.key === "japan") {
+  function factText(p, st = ST) {
+    if (st.key === "japan") {
       const f = (window.PREF_FACTS || {})[p.id];
       return f ? `県庁所在地 ${f[0]}・名産 ${f[1]}` : "";
     }
@@ -758,7 +782,7 @@
       const el = $("fact");
       el.innerHTML = "";
       const b = document.createElement("b");
-      b.textContent = p.name;
+      b.textContent = (flagsOn && flagOf(p) ? flagOf(p) + " " : "") + p.name;
       b.style.background = p.color;
       const sp = document.createElement("span");
       sp.textContent = t;
@@ -811,6 +835,18 @@
     const bsub = win ? `${ST.finalName} 一番のり！` : `+${bonus + tbonus}${tbonus ? `（タイムボーナス ${tbonus}）` : ""}`;
     fxComplete(btext, bsub, g);
     emit({ t: "c", tx: btext, sb: bsub });
+    collect(g.members);
+    if (!coop) {
+      // バッジ（協力モードはみんなの結果なので別に出す）
+      const later2 = (id) => later(() => dex("badge", id), 2600);
+      later2("first");
+      later2(`clear_${ST.key}`);
+      if (shufflesUsed === stageShuffle0) later2("noshuffle");
+      if (holdsUsed === stageHold0) later2("nohold");
+      if (finalStart && completeAt - finalStart <= 30000) later2("speed30");
+      if (mode === "hard") later2("hard");
+      if (ST.key === "world" && cleared.length >= 5) later2("allclear");
+    }
     if (!hooks) { store.set("prefpack.unlocked", Math.max(unlockedLevel(), ORDER.indexOf(ST.key) + 1)); showAsiaUnlock(); }
     updateHud();
     if (hooks && hooks.onStage) hooks.onStage(ST.key);
@@ -1038,8 +1074,10 @@
   function drawLabels(members, geom, toWorld, gold) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    const noNames = MODES[mode].noNames;
     for (const id of members) {
       const p = ST.pieces[id];
+      if (noNames && !p.home) continue;   // 上級: 名前を出さない
       const size = geom.s * Math.sqrt(p.area);
       if (size < 13) continue;
       let fs = Math.max(8, Math.min(15, size * 0.24));
@@ -1053,6 +1091,12 @@
       ctx.strokeText(p.short, w.x, w.y);
       ctx.fillStyle = gold ? "#5a3f00" : "#3b3226";
       ctx.fillText(p.short, w.x, w.y);
+      const fl = flagsOn && size >= 24 && flagOf(p);
+      if (fl) {
+        const ff = Math.max(10, Math.min(18, size * 0.26));
+        ctx.font = `${ff}px sans-serif`;
+        ctx.fillText(fl, w.x, w.y - fs * 0.6 - ff * 0.55);
+      }
     }
   }
 
@@ -1259,7 +1303,7 @@
   // 地図ガイド: 箱の左上の小さな地図で、いま落とす県（国）が「この辺にある」と赤く示す
   const MINI_W = 128, MINI_H = 104, MINI_X = BOX_L + 6, MINI_Y = 16;
   function drawMiniMap() {
-    if (!running || ended || completeAt || !current) return;
+    if (!running || ended || completeAt || !current || MODES[mode].noGuide) return;
     const cur = ST.pieces[current.id];
     if (!cur) return;
     const target = cur.island ? ST.pieces[cur.parentId] : cur;   // 島は親の場所を示す
@@ -1391,7 +1435,8 @@
   function drawNext() {
     const id = queue.length ? queue[0] : held;
     const np = id != null ? ST.pieces[id] : null;
-    ui.nextName.textContent = !np ? "—" : np.island ? `${np.short}→${ST.pieces[np.parentId].short}` : np.short;
+    ui.nextName.textContent = !np ? "—" : MODES[mode].noNames ? (np.island ? "島" : "？？？")
+      : np.island ? `${np.short}→${ST.pieces[np.parentId].short}` : `${flagsOn && flagOf(np) ? flagOf(np) + " " : ""}${np.short}`;
     drawThumb(nextCanvas, id);
     drawHold();
   }
@@ -1549,7 +1594,7 @@
     if (Math.abs(engine.gravity.x) < 0.002) engine.gravity.x = 0;
   }
   document.addEventListener("click", (e) => {
-    if (e.target.closest("#startBtn, #startEasyBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #tiltBtn")) askMotion();
+    if (e.target.closest("#startBtn, #startEasyBtn, #startHardBtn, #extraStages button, #mpStart, #mpCreateGo, #mpJoinGo, #againBtn, #tiltBtn")) askMotion();
   }, true);
   const showTiltLabel = () => { $("tiltBtn").textContent = `傾けてすべらせる：${tiltOn ? "ON" : "OFF"}`; };
   showTiltLabel();
@@ -1562,6 +1607,7 @@
   $("holdBtn").addEventListener("click", doHold);
   $("startBtn").addEventListener("click", () => newGame("normal"));
   $("startEasyBtn").addEventListener("click", () => newGame("easy"));
+  $("startHardBtn").addEventListener("click", () => newGame("hard"));
   // エクストラステージ: 日本列島を一度完成させると、タイトルから直接あそべる
   function unlockedLevel() {
     return Math.max(store.get("prefpack.unlocked", 0), store.get("prefpack.asiaUnlocked", false) ? 1 : 0);
@@ -1736,6 +1782,7 @@
         g = { members: new Set(m), geom: makeGroupGeom(m), local: { x: lx, y: ly }, body: { position: { x, y }, angle: a },
           tgt: { x, y, a }, born: now, flash: m.length > 1 ? 1 : 0, glowUntil: 0, gold: m.length === ST.ids.length };
         coop.gmap.set(key, g);
+        if (m.length > 1) collect(m);
       } else { g.tgt = { x, y, a }; g.local = { x: lx, y: ly }; }
     }
     for (const k of [...coop.gmap.keys()]) if (!seen.has(k)) coop.gmap.delete(k);
@@ -1812,6 +1859,8 @@
       const to = stage === "both" ? "asia" : stage === "all" ? "world" : stage;
       newGame(m, { seed, hooks: h, stage: first, chainTo: to });
     },
+    // 図鑑用
+    STAGES, flagOf, factText,
     ORDER, STAGE_NAMES: Object.fromEntries(Object.entries(STAGES).map(([k, v]) => [k, v.name])),
     stop() { toTitle(); },
     leaveToTitle: () => toTitle(),

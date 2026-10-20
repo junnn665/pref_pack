@@ -569,3 +569,53 @@ body.facts-off .fact-row { display: none; }
 }
 .stage-grid button.on { background: #3b6fd8; color: #fff; box-shadow: 0 2px 0 #2a52a6; }
 .stage-grid button.wide { grid-column: 1 / -1; font-size: 12px; }
+
+/* ---------- 上級モード ---------- */
+.btn.hard { background: #3b3226; color: #fff; box-shadow: 0 6px 0 #1f1912; }
+.btn.hard:active { box-shadow: 0 2px 0 #1f1912; }
+.btn.hard.mode-btn { flex-direction: row; justify-content: center; gap: 10px; font-size: 17px; padding: 10px 8px; }
+
+/* ---------- 図鑑・バッジ ---------- */
+.dex-card { max-width: 420px; }
+.dex-tabs { grid-template-columns: repeat(5, 1fr) 0.7fr; gap: 2px; }
+.dex-tabs button { min-width: 0; padding: 8px 0; font-size: 12px; letter-spacing: -.02em; white-space: nowrap; }
+.dex-progress { margin: 0; font-weight: 800; color: var(--ink-soft); font-size: 14px; }
+.dex-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 52vh; overflow-y: auto; padding: 2px; }
+.dex-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: #f6efe2; border: 0; border-radius: 12px; padding: 6px 2px 5px; font: inherit; cursor: pointer; min-width: 0;
+}
+.dex-cell canvas { width: 52px; height: 46px; }
+.dex-cell span { font-size: 10.5px; font-weight: 800; color: var(--ink-soft); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dex-cell.on { background: #fff; box-shadow: 0 2px 0 rgba(59,50,38,.12); }
+.dex-cell.on span { color: var(--ink); }
+.dex-grid.badges { grid-template-columns: repeat(2, 1fr); }
+.dex-badge { display: flex; flex-direction: column; align-items: center; gap: 2px; background: #f6efe2; border-radius: 12px; padding: 8px 6px; opacity: .55; }
+.dex-badge .ic { font-size: 26px; }
+.dex-badge b { font-size: 13px; }
+.dex-badge small { font-size: 10.5px; color: var(--ink-soft); line-height: 1.35; }
+.dex-badge.on { opacity: 1; background: #fff6d6; box-shadow: 0 2px 0 rgba(232,160,25,.35); }
+.dex-detail {
+  display: flex; gap: 12px; align-items: center; text-align: left;
+  background: #fff; border-radius: 14px; padding: 10px; box-shadow: 0 3px 0 rgba(59,50,38,.12); cursor: pointer;
+}
+.dex-detail.hidden { display: none; }
+.dex-detail canvas { width: 92px; height: 80px; flex: none; }
+.dex-detail .dd-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dex-detail b { font-size: 17px; }
+.dex-detail small { font-size: 11px; color: var(--ink-soft); font-weight: 800; }
+.dex-detail p { margin: 2px 0 0; font-size: 13px; line-height: 1.45; }
+
+/* バッジ獲得のお知らせ */
+.badge-toast {
+  position: fixed; left: 50%; top: 10px; z-index: 60;
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(135deg, #f7d35c, #e8a019); color: #4a3200;
+  border-radius: 16px; padding: 8px 16px 8px 10px; box-shadow: 0 6px 18px rgba(59,50,38,.25);
+  transform: translate(-50%, -120%); transition: transform .35s cubic-bezier(.2,1.4,.4,1); pointer-events: none;
+}
+.badge-toast.show { transform: translate(-50%, 0); }
+.badge-toast .bt-ic { font-size: 28px; }
+.badge-toast small { display: block; font-size: 11px; font-weight: 800; opacity: .8; }
+.badge-toast b { font-size: 16px; }
+.seg.m3 { grid-template-columns: 1fr 1fr 1fr; }

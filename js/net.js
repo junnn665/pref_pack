@@ -340,7 +340,7 @@
 
   $("mpLobbyMode").addEventListener("click", () => {
     if (!isHost() || !R || R.state !== "lobby") return;
-    NET.set(`${KEY(code)}/mode`, R.mode === "easy" ? "normal" : "easy").catch(() => {});
+    NET.set(`${KEY(code)}/mode`, { normal: "easy", easy: "hard", hard: "normal" }[R.mode] || "normal").catch(() => {});
   });
   $("mpLobbyStageGrid").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-stage]");
@@ -809,6 +809,7 @@
     const res = R.coopResult && R.coopResult.r === R.round ? R.coopResult : null;
     const order = participants().sort((a, b) => (a.joined || 0) - (b.joined || 0));
     $("mpResultTitle").textContent = !res ? "けっか集計中…" : res.cleared ? "みんなで完成！" : "ざんねん…";
+    if (res && res.cleared && window.PrefDex) window.PrefDex.badge("coop_clear");
     $("mpResultSub").textContent = `${order.length}人で協力・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}` + (res ? `・${res.score}点` : "");
     const ol = $("mpRanking");
     ol.innerHTML = "";
@@ -834,6 +835,7 @@
     const myRank = list.findIndex((p) => p.id === PID) + 1;
     const mine = list.find((p) => p.id === PID) || {};
 
+    if (allDone && list.length > 1 && myRank === 1 && window.PrefDex) window.PrefDex.badge("vs_win");
     if (allDone) {
       $("mpResultTitle").textContent = list.length > 1 ? (myRank === 1 ? "優勝！" : `${myRank}位`) : (mine.status === "clear" ? "日本列島 完成！" : "結果");
       $("mpResultSub").textContent = `${list.length}人で対戦・${(G().MODES[R.mode] || {}).name || ""}・${STAGE_NAMES[R.stage || "japan"]}`;

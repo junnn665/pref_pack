@@ -95,12 +95,14 @@
             かんたん<small>ベスト <span id="bestEasy">0</span></small>
           </button>
         </div>
-        <p class="mode-note">かんたん：ピース少し小さめ・くっつく相手が光る</p>
+        <button class="btn hard mode-btn" id="startHardBtn">上級<small>ベスト <span id="bestHard">0</span></small></button>
+        <p class="mode-note">かんたん：ピース少し小さめ・くっつく相手が光る／上級：地図ガイドなし・名前なし</p>
         <div class="asia-box locked" id="asiaBox">
           <p class="section-label">エクストラステージ <span class="asia-badge">世界へ</span></p>
-          <div class="seg" id="extraModeSeg">
+          <div class="seg m3" id="extraModeSeg">
             <button class="on" data-mode="normal">ふつう</button>
             <button data-mode="easy">かんたん</button>
+            <button data-mode="hard">上級</button>
           </div>
           <div class="extra-stages" id="extraStages">
             <button class="btn vs" data-stage="asia">アジア</button>
@@ -110,7 +112,10 @@
           </div>
           <p class="mode-note lock-note">🔒 日本列島を完成させると、つぎのステージから直接あそべます</p>
         </div>
-        <button class="btn rank-open" id="rankOpenBtn">🏆 ランキング</button>
+        <div class="modes">
+          <button class="btn rank-open" id="rankOpenBtn">🏆 ランキング</button>
+          <button class="btn rank-open" id="dexOpenBtn">📖 図鑑・バッジ</button>
+        </div>
         <p class="section-label">みんなで対戦・協力 <span class="net-badge">通信</span></p>
         <div class="modes">
           <button class="btn vs" id="mpCreateBtn">部屋を作る</button>
@@ -123,9 +128,10 @@
     <section class="overlay hidden" id="rankScreen">
       <div class="card">
         <h2>🏆 ランキング</h2>
-        <div class="seg" id="rankSeg">
+        <div class="seg m3" id="rankSeg">
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
+          <button data-mode="hard">上級</button>
         </div>
         <p class="mp-msg info" id="rankScreenMsg"></p>
         <ol class="rank-list" id="rankScreenList"></ol>
@@ -138,9 +144,10 @@
       <div class="card">
         <h2>部屋を作る</h2>
         <label class="field">なまえ<input id="mpNameC" maxlength="10" autocomplete="nickname" placeholder="例：じゅん"></label>
-        <div class="seg" id="mpModeSeg">
+        <div class="seg m3" id="mpModeSeg">
           <button class="on" data-mode="normal">ふつう</button>
           <button data-mode="easy">かんたん</button>
+          <button data-mode="hard">上級</button>
         </div>
         <div class="seg" id="mpPlaySeg">
           <button class="on" data-play="vs">⚔️ 対戦</button>
@@ -219,6 +226,19 @@
       </div>
     </section>
 
+    <!-- 図鑑・バッジ -->
+    <section class="overlay hidden" id="dexScreen">
+      <div class="card dex-card">
+        <h2>📖 図鑑・バッジ</h2>
+        <div class="seg dex-tabs" id="dexTabs"></div>
+        <p class="dex-progress" id="dexProgress"></p>
+        <div class="dex-grid" id="dexGrid"></div>
+        <div class="dex-detail hidden" id="dexDetail"></div>
+        <button class="btn" id="dexCloseBtn">もどる</button>
+      </div>
+    </section>
+    <div class="badge-toast" id="badgeToast"></div>
+
     <!-- menu -->
     <section class="overlay hidden" id="menuScreen">
       <div class="card">
@@ -260,10 +280,12 @@
   <script src="js/asia.js?v=20261020-2"></script>
   <script src="js/world.js?v=20261020-2"></script>
   <script src="js/capitals.js?v=20261020-2"></script>
+  <script src="js/flags.js?v=20261020-2"></script>
   <script src="js/facts.js?v=20261020-2"></script>
   <script src="js/islands.js?v=20261020-2"></script>
   <script src="js/game.js?v=20261020-2"></script>
   <script src="lib/qrcode.min.js?v=20261020-2"></script>
+  <script src="js/dex.js?v=20261020-2"></script>
   <script src="js/net.js?v=20261020-2"></script>
 </body>
 </html>
